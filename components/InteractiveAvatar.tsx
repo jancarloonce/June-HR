@@ -11,13 +11,12 @@ export default function InteractiveAvatar() {
   const [debug, setDebug] = useState<string>("")
   const [isUserTalking, setIsUserTalking] = useState(false)
   const [isAvatarTalking, setIsAvatarTalking] = useState(false)
-  const [conversation, setConversation] = useState<string[]>([])
-  const [showCalendar, setShowCalendar] = useState(false)
-  const [showProfile, setShowProfile] = useState(false)
   const [isSheetLoading, setIsSheetLoading] = useState(false)
   const [sheetVisible, setSheetVisible] = useState(false)
-  const [stage, setStage] = useState<"initial" | "greeting" | "listening" | "exam">("initial")
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isExamInProgress, setIsExamInProgress] = useState(false)
+  const [isWaitingForSubmit, setIsWaitingForSubmit] = useState(false)
+  const [isWaitingForReady, setIsWaitingForReady] = useState(true)
 
   const mediaStream = useRef<HTMLVideoElement>(null)
   const avatar = useRef<StreamingAvatar | null>(null)
@@ -112,12 +111,18 @@ export default function InteractiveAvatar() {
         console.log("Avatar started talking", e)
         setIsAvatarTalking(true)
         setDebug("Avatar started talking")
+        stopListening()
       })
 
       avatar.current.on(StreamingEvents.AVATAR_STOP_TALKING, (e) => {
         console.log("Avatar stopped talking", e)
         setIsAvatarTalking(false)
         setDebug("Avatar stopped talking")
+        if (!isExamInProgress) {
+          setTimeout(() => {
+            startListening()
+          }, 500) // Add a small delay before starting to listen again
+        }
       })
 
       avatar.current.on(StreamingEvents.STREAM_DISCONNECTED, () => {
@@ -128,9 +133,9 @@ export default function InteractiveAvatar() {
       avatar.current.on(StreamingEvents.STREAM_READY, (event) => {
         setStream(event.detail)
         setDebug("Stream ready")
-        setStage("greeting")
+        setIsWaitingForReady(true)
         speakAvatarResponse(
-          "Hello! I'm June, your AI assistant. You can ask me to open the spreadsheet by saying 'open sheet' or 'open spreadsheet'.",
+          "Hello! I'm June from Activate talent, your AI HR interviewer. Are you ready to take the exam?",
         )
       })
 
@@ -139,14 +144,16 @@ export default function InteractiveAvatar() {
         quality: AvatarQuality.Low,
         avatarName: "June_HR_public",
         knowledgeBase:
-          "Your name is June and you are an HR for JC Company. You love reading books as a hobby. " +
-          "When asked to open calendar, mention 'open calendar' in your response. " +
-          "When asked to show profile, mention 'show profile' in your response. " +
-          "When asked to open the sheet or spreadsheet, I will say 'I'll access the Google Sheet for you now' " +
-          "and then display the data from the spreadsheet.",
+          "You are June, an AI HR interviewer from Activate talent. Your role is to conduct interviews and assess candidates. " +
+          "You will greet the candidate, introduce yourself, and ask if they are ready to take the exam. " +
+          "The exam is about website metrics, conversion rates, and data analysis. " +
+          "After the candidate confirms they're ready, you'll open the exam sheet and inform them that they may begin. " +
+          "Do not provide any instructions about how to indicate they've finished. " +
+          "Always start by Greeing and introducing yourself, no need to repeat question" + 
+          "Do not speak again until you hear 'Done' or 'Submit' via voice recognition.",
         voice: {
           rate: 1.5,
-          emotion: VoiceEmotion.EXCITED,
+          emotion: VoiceEmotion.NEUTRAL,
         },
         language: "en",
         disableIdleTimeout: true,
@@ -160,6 +167,10 @@ export default function InteractiveAvatar() {
         useSilencePrompt: false,
       })
       setDebug("Voice chat started")
+      setIsWaitingForReady(true)
+      // await speakAvatarResponse(
+      //   "Hello! I'm June from Activate talent, your AI HR interviewer. Are you ready to take the exam?",
+      // )
 
       // Initialize speech recognition
       if (typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window)) {
@@ -177,7 +188,11 @@ export default function InteractiveAvatar() {
         recognitionRef.current.onresult = (event: any) => {
           const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase()
           console.log("Speech recognized:", transcript)
-          processUserInput(transcript)
+          if (!isAvatarTalking) {
+            processUserInput(transcript)
+          } else {
+            console.log("Ignoring input while avatar is talking")
+          }
         }
 
         recognitionRef.current.onerror = (event: any) => {
@@ -188,7 +203,7 @@ export default function InteractiveAvatar() {
         recognitionRef.current.onend = () => {
           console.log("Speech recognition ended")
           setIsUserTalking(false)
-          if (stage !== "initial") {
+          if (!isExamInProgress && !isAvatarTalking) {
             startListening()
           }
         }
@@ -209,11 +224,10 @@ export default function InteractiveAvatar() {
       await avatar.current?.stopAvatar()
       setStream(undefined)
       setDebug("Session ended")
-      setConversation([])
-      setShowCalendar(false)
-      setShowProfile(false)
       setSheetVisible(false)
-      setStage("initial")
+      setIsExamInProgress(false)
+      setIsWaitingForSubmit(false)
+      setIsWaitingForReady(true)
     } catch (error) {
       console.error("Error ending session:", error)
       setDebug(`Error ending session: ${error instanceof Error ? error.message : JSON.stringify(error)}`)
@@ -222,7 +236,6 @@ export default function InteractiveAvatar() {
 
   async function handleUserInput(transcript: string) {
     console.log("Handling user input:", transcript)
-    setConversation((prev) => [...prev, `You: ${transcript}`])
     return transcript
   }
 
@@ -249,50 +262,33 @@ export default function InteractiveAvatar() {
     console.log("Processing user input:", lowerMessage)
 
     try {
-      if (lowerMessage.includes("open sheet") || lowerMessage.includes("open spreadsheet")) {
-        console.log("Sheet access command detected")
-        await speakAvatarResponse("I'll access the Google Sheet for you now.")
-        const success = await accessGoogleSheet()
-        if (success) {
-          await speakAvatarResponse("I've successfully opened the Google Sheet. You can now view and interact with it.")
-        } else {
-          await speakAvatarResponse("I'm sorry, I couldn't access the Google Sheet. There seems to be a problem.")
+      if (!isExamInProgress) {
+        if ((lowerMessage.includes("yes") || lowerMessage.includes("ready")) && !isAvatarTalking && isWaitingForReady) {
+          setIsWaitingForReady(false)
+          await speakAvatarResponse("Understood. I'm opening the exam sheet now.")
+          const success = await accessGoogleSheet()
+          if (success) {
+            await speakAvatarResponse("The exam sheet is now open. You may begin.")
+            setIsExamInProgress(true)
+            setIsWaitingForSubmit(true)
+            stopListening() // Stop listening after the exam starts
+          } else {
+            await speakAvatarResponse(
+              "I apologize, but I'm having trouble accessing the exam sheet. Please wait a moment while I try to resolve this issue.",
+            )
+          }
         }
-      } else if (lowerMessage.includes("open calendar")) {
-        setShowCalendar(true)
-        setShowProfile(false)
-        await speakAvatarResponse("I'll open the calendar for you now.")
-      } else if (lowerMessage.includes("show profile")) {
-        setShowProfile(true)
-        setShowCalendar(false)
-        await speakAvatarResponse("I'll display your profile information.")
-      } else {
+      } else if (isWaitingForSubmit && (lowerMessage.includes("done") || lowerMessage.includes("submit"))) {
+        setIsWaitingForSubmit(false)
+        setIsExamInProgress(false)
         await speakAvatarResponse(
-          "I heard you say: " +
-            userMessage +
-            ". You can ask me to open the spreadsheet, calendar, or show your profile.",
+          "Thank you for completing the exam. I'll review your answers and get back to you soon.",
         )
+        // Here you can add logic to handle the exam submission
       }
     } finally {
       setIsProcessing(false)
     }
-  }
-
-  async function handleAvatarResponse(response: string) {
-    console.log("Handling avatar response:", response)
-    if (typeof response !== "string") {
-      console.error("Unexpected response type:", typeof response)
-      return
-    }
-
-    setConversation((prev) => {
-      const lastMessage = prev[prev.length - 1]
-      if (lastMessage && lastMessage.startsWith("June:")) {
-        return [...prev.slice(0, -1), `June: ${response}`]
-      } else {
-        return [...prev, `June: ${response}`]
-      }
-    })
   }
 
   async function speakAvatarResponse(response: string) {
@@ -301,7 +297,6 @@ export default function InteractiveAvatar() {
         await avatar.current.speak({
           text: response,
         })
-        handleAvatarResponse(response)
       } catch (error) {
         console.error("Error making avatar speak:", error)
         setDebug(`Error making avatar speak: ${error instanceof Error ? error.message : JSON.stringify(error)}`)
@@ -347,7 +342,9 @@ export default function InteractiveAvatar() {
                         ? "Listening"
                         : isProcessing
                           ? "Thinking..."
-                          : "Ready"}
+                          : isWaitingForSubmit
+                            ? "Waiting for 'Submit'"
+                            : "Ready"}
                   </span>
                 </div>
               </div>
@@ -400,36 +397,22 @@ export default function InteractiveAvatar() {
           </Card>
         )}
 
-        <Card className="w-full">
-          <CardBody>
-            <h3 className="text-lg font-bold mb-2">Conversation</h3>
-            <div className="max-h-60 overflow-y-auto space-y-2">
-              {conversation.map((message, index) => (
-                <p
-                  key={index}
-                  className={`p-2 rounded-lg ${message.startsWith("You:") ? "bg-blue-100" : "bg-green-100"}`}
-                >
-                  {message}
-                </p>
-              ))}
-            </div>
-          </CardBody>
-        </Card>
-
-        {showCalendar && (
-          <Card className="w-full">
+        {isWaitingForReady && (
+          <Card className="w-full bg-blue-100">
             <CardBody>
-              <h3 className="text-lg font-bold mb-2">Calendar</h3>
-              <p>This is a placeholder for the calendar UI.</p>
+              <p className="text-center text-blue-800 font-semibold">
+                Say "Yes" or "Ready" to start the exam on website metrics and conversion rates
+              </p>
             </CardBody>
           </Card>
         )}
 
-        {showProfile && (
-          <Card className="w-full">
+        {isWaitingForSubmit && (
+          <Card className="w-full bg-yellow-100">
             <CardBody>
-              <h3 className="text-lg font-bold mb-2">User Profile</h3>
-              <p>This is a placeholder for the user profile UI.</p>
+              <p className="text-center text-yellow-800 font-semibold">
+                Exam in progress. Say "Done" or "Submit" when you've finished.
+              </p>
             </CardBody>
           </Card>
         )}
