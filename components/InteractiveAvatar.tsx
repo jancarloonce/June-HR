@@ -17,6 +17,7 @@ export default function InteractiveAvatar() {
   const [isExamInProgress, setIsExamInProgress] = useState(false)
   const [isWaitingForSubmit, setIsWaitingForSubmit] = useState(false)
   const [isWaitingForReady, setIsWaitingForReady] = useState(true)
+  //const [lastProcessedTime, setLastProcessedTime] = useState(0) // Removed - not used in updated code
 
   const mediaStream = useRef<HTMLVideoElement>(null)
   const avatar = useRef<StreamingAvatar | null>(null)
@@ -35,10 +36,13 @@ export default function InteractiveAvatar() {
       } catch (error) {
         console.error("Error starting speech recognition:", error)
         setIsUserTalking(false)
+        // Reinitialize speech recognition if there's an error
+        initializeSpeechRecognition()
       }
     } else {
       console.error("Speech recognition not initialized")
       setIsUserTalking(false)
+      initializeSpeechRecognition()
     }
   }, [isUserTalking])
 
@@ -57,6 +61,50 @@ export default function InteractiveAvatar() {
       }
     }
   }, [isUserTalking])
+
+  const initializeSpeechRecognition = useCallback(() => {
+    if (typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window)) {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      recognitionRef.current = new SpeechRecognition()
+      recognitionRef.current.continuous = true
+      recognitionRef.current.interimResults = false
+      recognitionRef.current.lang = "en-US"
+
+      recognitionRef.current.onstart = () => {
+        console.log("Speech recognition started")
+        setIsUserTalking(true)
+      }
+
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase()
+        console.log("Speech recognized:", transcript)
+        if (!isAvatarTalking) {
+          processUserInput(transcript)
+        } else {
+          console.log("Ignoring input while avatar is talking")
+        }
+      }
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error("Speech recognition error", event.error)
+        setIsUserTalking(false)
+        // Attempt to restart listening after an error
+        setTimeout(() => startListening(), 1000)
+      }
+
+      recognitionRef.current.onend = () => {
+        console.log("Speech recognition ended")
+        setIsUserTalking(false)
+        if (!isExamInProgress && !isAvatarTalking) {
+          startListening()
+        }
+      }
+
+      console.log("Speech recognition initialized")
+    } else {
+      console.error("Speech recognition not supported in this browser")
+    }
+  }, [isAvatarTalking, isExamInProgress, startListening])
 
   async function fetchAccessToken() {
     try {
@@ -149,7 +197,7 @@ export default function InteractiveAvatar() {
           "The exam is about website metrics, conversion rates, and data analysis. " +
           "After the candidate confirms they're ready, you'll open the exam sheet and inform them that they may begin. " +
           "Do not provide any instructions about how to indicate they've finished. " +
-          "Always start by Greeing and introducing yourself, no need to repeat question" + 
+          "Always start by Greeting and introducing yourself, no need to repeat question" +
           "Do not speak again until you hear 'Done' or 'Submit' via voice recognition.",
         voice: {
           rate: 1.5,
@@ -168,48 +216,9 @@ export default function InteractiveAvatar() {
       })
       setDebug("Voice chat started")
       setIsWaitingForReady(true)
-      // await speakAvatarResponse(
-      //   "Hello! I'm June from Activate talent, your AI HR interviewer. Are you ready to take the exam?",
-      // )
 
-      // Initialize speech recognition
-      if (typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window)) {
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-        recognitionRef.current = new SpeechRecognition()
-        recognitionRef.current.continuous = true
-        recognitionRef.current.interimResults = false
-        recognitionRef.current.lang = "en-US"
-
-        recognitionRef.current.onstart = () => {
-          console.log("Speech recognition started")
-          setIsUserTalking(true)
-        }
-
-        recognitionRef.current.onresult = (event: any) => {
-          const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase()
-          console.log("Speech recognized:", transcript)
-          if (!isAvatarTalking) {
-            processUserInput(transcript)
-          } else {
-            console.log("Ignoring input while avatar is talking")
-          }
-        }
-
-        recognitionRef.current.onerror = (event: any) => {
-          console.error("Speech recognition error", event.error)
-          setIsUserTalking(false)
-        }
-
-        recognitionRef.current.onend = () => {
-          console.log("Speech recognition ended")
-          setIsUserTalking(false)
-          if (!isExamInProgress && !isAvatarTalking) {
-            startListening()
-          }
-        }
-
-        startListening()
-      }
+      initializeSpeechRecognition()
+      startListening()
     } catch (error) {
       console.error("Error starting avatar session:", error)
       setDebug(`Error starting session: ${error instanceof Error ? error.message : JSON.stringify(error)}`)
@@ -268,7 +277,10 @@ export default function InteractiveAvatar() {
           await speakAvatarResponse("Understood. I'm opening the exam sheet now.")
           const success = await accessGoogleSheet()
           if (success) {
-            await speakAvatarResponse("The exam sheet is now open. You may begin.")
+            setSheetVisible(true) // Ensure the sheet is visible
+            await speakAvatarResponse(
+              "You can answer the exam sheet now. Please say 'submit' when you finish the exam.",
+            )
             setIsExamInProgress(true)
             setIsWaitingForSubmit(true)
             stopListening() // Stop listening after the exam starts
@@ -281,6 +293,7 @@ export default function InteractiveAvatar() {
       } else if (isWaitingForSubmit && (lowerMessage.includes("done") || lowerMessage.includes("submit"))) {
         setIsWaitingForSubmit(false)
         setIsExamInProgress(false)
+        setSheetVisible(false) // Hide the sheet when the exam is submitted
         await speakAvatarResponse(
           "Thank you for completing the exam. I'll review your answers and get back to you soon.",
         )
