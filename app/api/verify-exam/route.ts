@@ -42,6 +42,8 @@ export async function GET() {
         "feedback": [array of specific feedback for each question or formula],
         "overallFeedback": "A summary of the candidate's performance"
       }
+
+      Ensure that your response is a valid JSON object.
     `
 
     const { text } = await generateText({
@@ -49,12 +51,45 @@ export async function GET() {
       prompt: prompt,
     })
 
-    const result = JSON.parse(text)
+    console.log("OpenAI response:", text)
 
-    return NextResponse.json(result)
+    try {
+      const result = JSON.parse(text)
+      return NextResponse.json(result)
+    } catch (error) {
+      console.error("Error parsing OpenAI response:", error)
+      console.log("Raw OpenAI response:", text)
+
+      // Attempt to extract JSON from the response
+      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        try {
+          const extractedJson = JSON.parse(jsonMatch[0])
+          return NextResponse.json(extractedJson)
+        } catch (extractError) {
+          console.error("Error parsing extracted JSON:", extractError)
+        }
+      }
+
+      // If JSON extraction fails, return a formatted error response
+      return NextResponse.json({
+        passed: false,
+        score: 0,
+        feedback: ["Error analyzing formulas. Please try again."],
+        overallFeedback: "Unable to evaluate the exam due to an unexpected response format.",
+      })
+    }
   } catch (error) {
     console.error("Error verifying exam:", error)
-    return NextResponse.json({ error: "Failed to verify exam" }, { status: 500 })
+    return NextResponse.json(
+      {
+        passed: false,
+        score: 0,
+        feedback: ["Error occurred while verifying the exam."],
+        overallFeedback: "Unable to evaluate the exam due to a technical issue. Please try again.",
+      },
+      { status: 500 },
+    )
   }
 }
 
