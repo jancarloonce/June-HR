@@ -5,6 +5,9 @@ import StreamingAvatar, { AvatarQuality, StreamingEvents, VoiceEmotion } from "@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Loader2, Mic, Volume2 } from "lucide-react"
+import { ExamSheet } from "./ExamSheet"
+import { ExamResults } from "./ExamResults"
+import { ExamPlaceholder } from "./ExamPlaceholder"
 
 export default function InteractiveAvatar() {
   const [isLoadingSession, setIsLoadingSession] = useState(false)
@@ -16,7 +19,9 @@ export default function InteractiveAvatar() {
   const [sheetVisible, setSheetVisible] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isExamInProgress, setIsExamInProgress] = useState(false)
-  const [examStage, setExamStage] = useState<"notStarted" | "inProgress" | "submitted">("notStarted")
+  const [examStage, setExamStage] = useState<"notStarted" | "inProgress" | "submitted" | "verifying">("notStarted")
+  const [examResult, setExamResult] = useState<any>(null)
+  const [hasSpokenAboutSheet, setHasSpokenAboutSheet] = useState(false)
 
   const mediaStream = useRef<HTMLVideoElement>(null)
   const avatar = useRef<StreamingAvatar | null>(null)
@@ -29,18 +34,23 @@ export default function InteractiveAvatar() {
 
   const speakAvatarResponse = useCallback(
     async (response: string) => {
-      if (avatar.current) {
+      if (avatar.current && (!sheetVisible || !hasSpokenAboutSheet || examStage === "submitted")) {
         try {
           addDebug(`Avatar speaking: ${response}`)
           await avatar.current.speak({
             text: response,
           })
+          if (sheetVisible && !hasSpokenAboutSheet) {
+            setHasSpokenAboutSheet(true)
+          }
         } catch (error) {
           addDebug(`Error making avatar speak: ${error instanceof Error ? error.message : JSON.stringify(error)}`)
         }
+      } else {
+        addDebug(`Avatar not speaking: ${response}`)
       }
     },
-    [addDebug],
+    [addDebug, sheetVisible, hasSpokenAboutSheet, examStage],
   )
 
   const accessGoogleSheet = useCallback(async (): Promise<boolean> => {
@@ -157,16 +167,52 @@ export default function InteractiveAvatar() {
     }
   }, [addDebug, isAvatarTalking, isProcessing, examStage, startListening])
 
+  const verifyExam = useCallback(async () => {
+    addDebug("Verifying exam...")
+    try {
+      const response = await fetch("/api/verify-exam", {
+        method: "GET",
+      })
+      if (!response.ok) {
+        throw new Error("Failed to verify exam")
+      }
+      const result = await response.json()
+      addDebug(`Exam verification result: ${JSON.stringify(result)}`)
+      return result
+    } catch (error) {
+      addDebug(`Error verifying exam: ${error instanceof Error ? error.message : JSON.stringify(error)}`)
+      return null
+    }
+  }, [addDebug])
+
   const handleExamSubmission = useCallback(async () => {
     addDebug("Handling exam submission")
-    setExamStage("submitted")
+    setExamStage("verifying")
     setSheetVisible(false)
     addDebug(`Sheet visibility set to false`)
     setIsExamInProgress(false)
     stopListening()
 
-    await speakAvatarResponse("Thank you for completing the exam. The session is now over.")
-  }, [addDebug, speakAvatarResponse, stopListening])
+    await speakAvatarResponse("Thank you for completing the exam. I will now verify your answers.")
+
+    const result = await verifyExam()
+
+    if (result) {
+      setExamResult(result)
+      const passMessage = result.passed
+        ? "Congratulations! You have passed the exam."
+        : "Unfortunately, you did not pass the exam."
+
+      await speakAvatarResponse(`${passMessage} Your score is ${result.score.toFixed(2)}%. ${result.overallFeedback}`)
+    } else {
+      await speakAvatarResponse(
+        "I'm sorry, but there was an error verifying your exam. Please contact the administrator.",
+      )
+    }
+
+    setExamStage("submitted")
+    await speakAvatarResponse("The session is now over. Thank you for your participation.")
+  }, [addDebug, speakAvatarResponse, stopListening, verifyExam])
 
   const processUserInput = useCallback(
     async (userMessage: string) => {
@@ -202,6 +248,12 @@ export default function InteractiveAvatar() {
                 )
                 setTimeout(startListening, 2000)
               }
+            } else {
+              addDebug("User input not recognized as ready. Prompting again.")
+              await speakAvatarResponse(
+                "I'm sorry, I didn't catch that. Please say 'yes' or 'ready' when you're prepared to start the exam.",
+              )
+              startListening()
             }
             break
           case "inProgress":
@@ -210,6 +262,7 @@ export default function InteractiveAvatar() {
               await handleExamSubmission()
             } else {
               addDebug(`Exam in progress. Waiting for 'done' or 'submit'. Heard: ${lowerMessage}`)
+              startListening() //Added startListening here
             }
             break
           default:
@@ -366,6 +419,7 @@ export default function InteractiveAvatar() {
       setSheetVisible(false)
       setIsExamInProgress(false)
       setExamStage("notStarted")
+      setHasSpokenAboutSheet(false) // Reset this state when ending the session
     } catch (error) {
       addDebug(`Error ending session: ${error instanceof Error ? error.message : JSON.stringify(error)}`)
     }
@@ -413,9 +467,9 @@ export default function InteractiveAvatar() {
   return (
     <div className="w-full min-h-screen bg-gray-100 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col md:flex-row gap-8">
+        <div className="flex flex-col lg:flex-row gap-8">
           {/* June avatar */}
-          <div className={`w-full md:w-1/2`}>
+          <div className="w-full lg:w-1/3">
             <Card className="bg-white shadow-md">
               <CardContent className="p-0">
                 {stream ? (
@@ -465,58 +519,62 @@ export default function InteractiveAvatar() {
                 )}
               </CardFooter>
             </Card>
-          </div>
 
-          {/* Sheet and other components */}
-          <div className={`w-full md:w-1/2 space-y-4`}>
-            {sheetVisible && (
+            {/* Status Cards */}
+            <div className="mt-4 space-y-4">
+              {examStage === "notStarted" && (
+                <Card className="bg-gray-200 shadow-md">
+                  <CardContent>
+                    <p className="text-center text-gray-800 font-semibold">
+                      Say "Yes" or "Ready" to start the exam on website metrics and conversion rates
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {examStage === "inProgress" && (
+                <Card className="bg-gray-200 shadow-md">
+                  <CardContent>
+                    <p className="text-center text-gray-800 font-semibold">
+                      Exam in progress. Say "Done" or "Submit" when you've finished.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {examStage === "verifying" && (
+                <Card className="bg-gray-200 shadow-md">
+                  <CardContent>
+                    <p className="text-center text-gray-800 font-semibold">Verifying your exam results...</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Debug Console */}
               <Card className="bg-white shadow-md">
-                <CardContent className="p-0">
-                  <div className="relative w-full h-[400px]">
-                    {isSheetLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-gray-100 bg-opacity-75 z-10">
-                        <Loader2 className="h-8 w-8 animate-spin text-gray-600" />
-                      </div>
-                    )}
-                    <iframe
-                      src="https://docs.google.com/spreadsheets/d/1UQkuSlYqaBqobS5-TTFrqxTKx_efMjAeFH1mSzcpi0c/edit?usp=sharing"
-                      className="w-full h-full border-none"
-                      allowFullScreen
-                      onLoad={() => setIsSheetLoading(false)}
-                    />
+                <CardContent>
+                  <h3 className="text-lg font-bold mb-2 text-gray-800">Debug Console</h3>
+                  <div className="bg-gray-100 p-4 rounded-lg max-h-48 overflow-y-auto">
+                    <p className="font-mono text-sm text-gray-600 whitespace-pre-wrap">{debug}</p>
                   </div>
                 </CardContent>
               </Card>
-            )}
+            </div>
+          </div>
 
-            {examStage === "notStarted" && (
-              <Card className="bg-gray-200 shadow-md">
-                <CardContent>
-                  <p className="text-center text-gray-800 font-semibold">
-                    Say "Yes" or "Ready" to start the exam on website metrics and conversion rates
-                  </p>
-                </CardContent>
-              </Card>
-            )}
+          {/* Sheet and Results */}
+          <div className="w-full lg:w-2/3 space-y-4">
+            <div className="h-[calc(100vh-2rem)]">
+              {" "}
+              {/* Adjust height as needed */}
+              {sheetVisible ? (
+                <ExamSheet isSheetLoading={isSheetLoading} onSheetLoad={() => setIsSheetLoading(false)} />
+              ) : (
+                <ExamPlaceholder />
+              )}
+            </div>
 
-            {examStage === "inProgress" && (
-              <Card className="bg-gray-200 shadow-md">
-                <CardContent>
-                  <p className="text-center text-gray-800 font-semibold">
-                    Exam in progress. Say "Done" or "Submit" when you've finished.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-
-            <Card className="bg-white shadow-md">
-              <CardContent>
-                <h3 className="text-lg font-bold mb-2 text-gray-800">Debug Console</h3>
-                <div className="bg-gray-100 p-4 rounded-lg">
-                  <p className="font-mono text-sm text-gray-600">{debug}</p>
-                </div>
-              </CardContent>
-            </Card>
+            {examStage === "submitted" && <ExamResults isVerifying={false} examResult={examResult} />}
           </div>
         </div>
       </div>

@@ -1,10 +1,6 @@
-import InteractiveAvatar from "../components/InteractiveAvatar"
+import { LandingPage } from "@/components/LandingPage"
 
 export default function Home() {
-  return (
-    <main className="min-h-screen bg-gray-100 py-8">
-      <InteractiveAvatar />
-    </main>
-  )
+  return <LandingPage />
 }
 
