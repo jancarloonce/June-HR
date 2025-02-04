@@ -6,11 +6,23 @@ import { Button } from "@/components/ui/button"
 import StreamingAvatar, { AvatarQuality, StreamingEvents, TaskType } from "@heygen/streaming-avatar"
 import { ExamArea } from "./ExamArea/ExamArea"
 import { SkeletonLoader } from "./SkeletonLoader"
-import { CheckIcon } from "lucide-react"
+import { CheckIcon, XIcon } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
 interface InteractiveAvatarProps {
   onReturnToLanding: () => void
+}
+
+interface ExamResult {
+  isCorrect: boolean
+  feedback: string
+  formulaAccuracy: number
+  calculationAccuracy: number
+  errors: string[]
+  suggestions: string[]
+  flaggedCells: string[]
+  versionA?: { expected: number; submitted: number; isCorrect: boolean }
+  versionB?: { expected: number; submitted: number; isCorrect: boolean }
 }
 
 export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvatarProps) {
@@ -37,6 +49,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   const avatarRef = useRef<StreamingAvatar | null>(null)
   const recognitionRef = useRef<any>(null)
   const [initialSheetData, setInitialSheetData] = useState<any>(null)
+  const [examResult, setExamResult] = useState<ExamResult | null>(null)
 
   const addDebug = useCallback((message: string) => {
     setDebug((prevDebug) => `${prevDebug}\n${new Date().toISOString()}: ${message}`)
@@ -338,30 +351,76 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     } finally {
       setIsLoading(false)
     }
-  }, [addDebug, fetchAccessToken, startVoiceRecognition, handleInitialResponse, speakGreeting, examStage])
+  }, [addDebug, fetchAccessToken, startVoiceRecognition, handleInitialResponse, speakGreeting])
 
   const handleSubmitExam = useCallback(async () => {
     addDebug("Submitting exam...")
     setIsSubmitting(true)
     setIsSheetOpen(false)
 
-    await new Promise((resolve) => setTimeout(resolve, 1000)) //Simulate processing time
-
-    setExamStage("completed")
-    setIsSubmitting(false)
-    addDebug("Exam submitted and completed")
-
-    if (avatarRef.current) {
-      await avatarRef.current.speak({
-        text: "Congratulations! You have successfully completed the exam.",
-        task_type: TaskType.REPEAT,
-      })
+    if (!sheetUrl) {
+      addDebug("Error: Sheet URL is not available")
+      setExamStage("error")
+      if (avatarRef.current) {
+        await avatarRef.current.speak({
+          text: "I apologize, but there was an error submitting your exam. The sheet URL is not available.",
+          task_type: TaskType.REPEAT,
+        })
+      }
+      setIsSubmitting(false)
+      return
     }
 
-    setTimeout(async () => {
-      await askAdditionalQuestion()
-    }, 2000)
-  }, [addDebug, askAdditionalQuestion])
+    try {
+      const response = await fetch("/api/verify-exam", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sheetUrl }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("Error response:", errorText)
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`)
+      }
+
+      const result: ExamResult = await response.json()
+      setExamResult(result)
+      setExamStage("completed")
+      addDebug("Exam submitted and verified")
+
+      if (avatarRef.current) {
+        const speechText = result.isCorrect
+          ? `Congratulations! You have successfully completed the exam. Your formula accuracy was ${result.formulaAccuracy}% and calculation accuracy was ${result.calculationAccuracy}%. ${result.feedback}`
+          : `I'm sorry, but there were some issues with your exam. ${result.feedback}`
+        await avatarRef.current.speak({
+          text: speechText,
+          task_type: TaskType.REPEAT,
+        })
+      }
+
+      if (result.isCorrect) {
+        setTimeout(async () => {
+          await askAdditionalQuestion()
+        }, 2000)
+      } else {
+        setExamStage("finished")
+      }
+    } catch (error) {
+      addDebug(`Error submitting exam: ${error instanceof Error ? error.message : String(error)}`)
+      setExamStage("error")
+      if (avatarRef.current) {
+        await avatarRef.current.speak({
+          text: "I apologize, but there was an error submitting your exam. Please try again later.",
+          task_type: TaskType.REPEAT,
+        })
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }, [sheetUrl, askAdditionalQuestion, addDebug])
 
   const handleVoiceSubmission = useCallback(
     (userResponse: string) => {
@@ -376,6 +435,23 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     },
     [addDebug, handleSubmitExam, startVoiceRecognition],
   )
+
+  const fetchSheetData = useCallback(async () => {
+    if (!sheetUrl) {
+      throw new Error("Sheet URL is not available")
+    }
+    try {
+      const response = await fetch("/api/get-sheet-data")
+      if (!response.ok) {
+        throw new Error(`Failed to fetch sheet data: ${response.statusText}`)
+      }
+      const data = await response.json()
+      return data.data // Assuming the API returns { data: ... }
+    } catch (error) {
+      console.error("Error fetching sheet data:", error)
+      throw error
+    }
+  }, [sheetUrl])
 
   useEffect(() => {
     return () => {
@@ -435,17 +511,6 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
                 )}
               </CardContent>
             </Card>
-
-            {/* {!isAvatarCentered && (
-              <Card className="bg-gray-50 shadow-sm">
-                <CardContent className="p-4">
-                  <h3 className="font-semibold mb-2 text-gray-700">Debug Log:</h3>
-                  <div className="bg-white p-3 rounded-md max-h-[30vh] overflow-y-auto border border-gray-200">
-                    <pre className="whitespace-pre-wrap text-xs font-mono text-gray-600">{debug}</pre>
-                  </div>
-                </CardContent>
-              </Card>
-            )} */}
           </motion.div>
 
           <AnimatePresence>
@@ -485,15 +550,23 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
                   <Card className="w-full bg-gray-50 shadow-sm">
                     <CardContent className="p-6">
                       <div className="text-center">
-                        <h2 className="text-2xl font-semibold mb-4 text-gray-800">Exam Completed</h2>
+                        <h2 className="text-2xl font-semibold mb-4 text-gray-800">
+                          {examResult?.isCorrect ? "Exam Passed" : "Exam Failed"}
+                        </h2>
                         <div className="w-16 h-16 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center">
-                          <CheckIcon className="w-8 h-8 text-gray-600" />
+                          {examResult?.isCorrect ? (
+                            <CheckIcon className="w-8 h-8 text-green-600" />
+                          ) : (
+                            <XIcon className="w-8 h-8 text-red-600" />
+                          )}
                         </div>
                         <p className="text-lg mb-3 text-gray-700">
-                          Congratulations! You have successfully completed the exam.
+                          {examResult?.isCorrect
+                            ? "Congratulations! You have successfully completed the exam."
+                            : "Unfortunately, you did not pass the exam."}
                         </p>
                         {examStage === "finished" && (
-                          <p className="text-sm text-gray-600">
+                          <p className="text-sm text-gray-600 mt-4">
                             Thank you for your participation. We will contact you within 24 hours.
                           </p>
                         )}
