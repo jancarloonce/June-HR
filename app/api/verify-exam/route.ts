@@ -1,55 +1,62 @@
-import type { NextApiRequest, NextApiResponse } from "next"
-import { Configuration, OpenAIApi } from "openai"
+import { OpenAI } from "openai"
+import { NextResponse } from "next/server"
 
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
-const openai = new OpenAIApi(configuration)
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ message: "Method not allowed" })
-  }
-
-  const { sheetUrl } = req.body
-
-  if (!sheetUrl) {
-    return res.status(400).json({ message: "Sheet URL is required" })
-  }
-
+export async function POST(req: Request) {
   try {
-    // Here you would implement the logic to read the contents of the Google Sheet
-    // For this example, we'll use a placeholder content
-    const sheetContent = `
-      A1: =SUM(B1:B5)
-      B1: 10
-      B2: 20
-      B3: 30
-      B4: 40
-      B5: 50
-    `
+    const { initialData, submittedData } = await req.json()
 
+    if (!initialData || !submittedData) {
+      return NextResponse.json({ error: "Both initial and submitted sheet data are required" }, { status: 400 })
+    }
+
+    // Prepare the prompt for OpenAI
     const prompt = `
-      Verify if the following spreadsheet formulas are correct:
-      ${sheetContent}
-      
-      Respond with "PASS" if all formulas are correct, or "FAIL" if any formula is incorrect.
-      Provide a brief explanation of your decision.
+    You are an expert in evaluating Google Sheets formulas and results for an e-commerce analytics exam.
+    
+    Context:
+    - The exam is about analyzing homepage version A vs B conversion rates
+    - Conversion rate = (Total Orders / Total Visits) * 100
+    - Formula accuracy and final percentage results are crucial
+    
+    Initial Sheet Data:
+    ${JSON.stringify(initialData, null, 2)}
+    
+    Submitted Sheet Data:
+    ${JSON.stringify(submittedData, null, 2)}
+    
+    Please evaluate:
+    1. Are the formulas correctly structured?
+    2. Are the calculations accurate?
+    3. Do the final results match expected values?
+    4. Is the conversion rate calculation correct for both versions?
+    
+    Provide your evaluation in the following format:
+    {
+      "isCorrect": boolean,
+      "feedback": string,
+      "formulaAccuracy": number (0-100),
+      "calculationAccuracy": number (0-100),
+      "errors": string[] (if any),
+      "suggestions": string[] (if any)
+    }
     `
 
-    const completion = await openai.createCompletion({
-      model: "text-davinci-002",
-      prompt: prompt,
-      max_tokens: 100,
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: "gpt-4",
+      temperature: 0,
     })
 
-    const result = completion.data.choices[0].text?.trim().toUpperCase()
-    const passed = result?.includes("PASS")
+    const result = JSON.parse(completion.choices[0].message.content || "{}")
 
-    return res.status(200).json({ passed, explanation: result })
+    return NextResponse.json(result)
   } catch (error) {
     console.error("Error verifying exam:", error)
-    return res.status(500).json({ message: "Error verifying exam" })
+    return NextResponse.json({ error: "Error verifying exam" }, { status: 500 })
   }
 }
 

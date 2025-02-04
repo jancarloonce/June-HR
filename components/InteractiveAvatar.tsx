@@ -5,9 +5,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import StreamingAvatar, { AvatarQuality, StreamingEvents, TaskType } from "@heygen/streaming-avatar"
 import { ExamArea } from "./ExamArea/ExamArea"
-import { ExamPlaceholder } from "./ExamPlaceholder/ExamPlaceholder"
 import { SkeletonLoader } from "./SkeletonLoader"
 import { CheckIcon } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 
 interface InteractiveAvatarProps {
   onReturnToLanding: () => void
@@ -32,9 +32,11 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   const [isRecognitionActive, setIsRecognitionActive] = useState(false)
   const [hourlyRate, setHourlyRate] = useState<string | null>(null)
   const [successfulCampaign, setSuccessfulCampaign] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false) // Added state for submission loading
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isAvatarCentered, setIsAvatarCentered] = useState(true)
   const avatarRef = useRef<StreamingAvatar | null>(null)
   const recognitionRef = useRef<any>(null)
+  const [initialSheetData, setInitialSheetData] = useState<any>(null)
 
   const addDebug = useCallback((message: string) => {
     setDebug((prevDebug) => `${prevDebug}\n${new Date().toISOString()}: ${message}`)
@@ -143,18 +145,29 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   const startExam = useCallback(async () => {
     addDebug("Starting exam...")
     setExamStage("loading")
-    const url = await fetchSheetUrl()
-    if (url) {
-      setSheetUrl(url)
-      setExamStage("inProgress")
-      setIsSheetOpen(true)
-      addDebug("Exam started successfully")
-      startVoiceRecognition(handleVoiceSubmission) //Start voice recognition for exam submission
-    } else {
+    try {
+      const response = await fetch("/api/get-sheet-url")
+      if (!response.ok) {
+        throw new Error("Failed to fetch sheet data")
+      }
+      const { url, data } = await response.json()
+
+      if (url && data) {
+        setSheetUrl(url)
+        setInitialSheetData(data)
+        setExamStage("inProgress")
+        setIsSheetOpen(true)
+        setIsAvatarCentered(false) // Trigger the animation
+        addDebug("Exam started successfully")
+        startVoiceRecognition(handleVoiceSubmission)
+      } else {
+        throw new Error("Missing URL or data in response")
+      }
+    } catch (error) {
       setExamStage("notStarted")
-      addDebug("Failed to start exam: Could not fetch sheet URL")
+      addDebug(`Failed to start exam: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
-  }, [addDebug, fetchSheetUrl, startVoiceRecognition])
+  }, [addDebug, startVoiceRecognition])
 
   const handleInitialResponse = useCallback(
     async (userResponse: string) => {
@@ -329,13 +342,13 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
 
   const handleSubmitExam = useCallback(async () => {
     addDebug("Submitting exam...")
-    setIsSubmitting(true) //Added
+    setIsSubmitting(true)
     setIsSheetOpen(false)
 
     await new Promise((resolve) => setTimeout(resolve, 1000)) //Simulate processing time
 
     setExamStage("completed")
-    setIsSubmitting(false) //Added
+    setIsSubmitting(false)
     addDebug("Exam submitted and completed")
 
     if (avatarRef.current) {
@@ -377,13 +390,21 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   }, [])
 
   return (
-    <div className="w-full min-h-screen bg-gray-100 p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col lg:flex-row gap-8">
-          <div className="w-full lg:w-1/3 space-y-4">
-            <Card className="bg-white shadow-md">
-              <CardContent className="p-6">
-                <div className="aspect-video bg-gray-200 rounded-lg overflow-hidden mb-4">
+    <div className="w-full min-h-screen bg-white p-4 md:p-8 pt-16">
+      <div className="max-w-6xl mx-auto">
+        <motion.div
+          className="flex flex-col lg:flex-row gap-8 items-center justify-center"
+          animate={isAvatarCentered ? { width: "100%" } : { width: "100%" }}
+          transition={{ duration: 0.5 }}
+        >
+          <motion.div
+            className={`w-full ${isAvatarCentered ? "lg:w-2/3" : "lg:w-1/3"} space-y-4`}
+            animate={isAvatarCentered ? { scale: 1.2, y: 0 } : { scale: 1, y: -290 }}
+            transition={{ duration: 0.5 }}
+          >
+            <Card className="bg-gray-50 shadow-sm">
+              <CardContent className="p-4">
+                <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden mb-4">
                   {isLoading ? (
                     <SkeletonLoader />
                   ) : stream ? (
@@ -404,69 +425,86 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
                   )}
                 </div>
                 {examStage === "notStarted" && (
-                  <Button onClick={startSession} disabled={isLoading} className="w-full">
-                    {isLoading ? "Starting..." : "Start Session"}
+                  <Button
+                    onClick={startSession}
+                    disabled={isLoading}
+                    className="w-full bg-black hover:bg-gray-800 text-white"
+                  >
+                    {isLoading ? "Starting..." : "Start Interview"}
                   </Button>
                 )}
               </CardContent>
             </Card>
 
-            <Card className="bg-white shadow-md">
-              <CardContent>
-                <h3 className="font-bold mb-2">Debug Log:</h3>
-                <div className="bg-gray-100 p-4 rounded-md max-h-[60vh] overflow-y-auto">
-                  <pre className="whitespace-pre-wrap text-sm font-mono">{debug}</pre>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="w-full lg:w-2/3">
-            {examStage === "notStarted" && <ExamPlaceholder />}
-            {examStage === "loading" && <ExamPlaceholder />}
-            {(examStage === "inProgress" || examStage === "verifying") && sheetUrl && (
-              <div>
-                {isSubmitting ? (
-                  <Card className="w-full h-[calc(100vh-2rem)]">
-                    <CardContent className="flex items-center justify-center h-full">
-                      <SkeletonLoader />
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <ExamArea
-                    sheetVisible={isSheetOpen}
-                    isSheetLoading={false}
-                    examStage={examStage}
-                    sheetUrl={sheetUrl}
-                    className="h-[calc(100vh-2rem)]"
-                    onSubmitExam={handleSubmitExam}
-                  />
-                )}
-              </div>
-            )}
-            {(examStage === "completed" ||
-              examStage === "additionalQuestion1" ||
-              examStage === "additionalQuestion2" ||
-              examStage === "finished") && (
-              <Card className="w-full">
-                <CardContent className="p-8">
-                  <div className="text-center">
-                    <h2 className="text-3xl font-bold mb-6 text-green-600">Exam Completed</h2>
-                    <div className="w-16 h-16 mx-auto mb-6 bg-green-100 rounded-full flex items-center justify-center">
-                      <CheckIcon className="w-8 h-8 text-green-600" />
-                    </div>
-                    <p className="text-xl mb-4">Congratulations! You have successfully completed the exam.</p>
-                    {examStage === "finished" && (
-                      <p className="text-lg text-gray-600">
-                        Thank you for your participation. We will contact you within 24 hours.
-                      </p>
-                    )}
+            {/* {!isAvatarCentered && (
+              <Card className="bg-gray-50 shadow-sm">
+                <CardContent className="p-4">
+                  <h3 className="font-semibold mb-2 text-gray-700">Debug Log:</h3>
+                  <div className="bg-white p-3 rounded-md max-h-[30vh] overflow-y-auto border border-gray-200">
+                    <pre className="whitespace-pre-wrap text-xs font-mono text-gray-600">{debug}</pre>
                   </div>
                 </CardContent>
               </Card>
+            )} */}
+          </motion.div>
+
+          <AnimatePresence>
+            {!isAvatarCentered && (
+              <motion.div
+                className="w-full lg:w-2/3 lg:h-[calc(100vh-8rem)]"
+                initial={{ opacity: 0, x: 50 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 50 }}
+                transition={{ duration: 0.5 }}
+              >
+                {(examStage === "inProgress" || examStage === "verifying") && sheetUrl && (
+                  <div>
+                    {isSubmitting ? (
+                      <Card className="w-full h-[calc(100vh-2rem)] bg-gray-50 shadow-sm">
+                        <CardContent className="flex items-center justify-center h-full">
+                          <SkeletonLoader />
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <ExamArea
+                        sheetVisible={isSheetOpen}
+                        isSheetLoading={false}
+                        examStage={examStage}
+                        sheetUrl={sheetUrl}
+                        initialSheetData={initialSheetData}
+                        className="h-[calc(100vh-2rem)]"
+                        onSubmitExam={handleSubmitExam}
+                      />
+                    )}
+                  </div>
+                )}
+                {(examStage === "completed" ||
+                  examStage === "additionalQuestion1" ||
+                  examStage === "additionalQuestion2" ||
+                  examStage === "finished") && (
+                  <Card className="w-full bg-gray-50 shadow-sm">
+                    <CardContent className="p-6">
+                      <div className="text-center">
+                        <h2 className="text-2xl font-semibold mb-4 text-gray-800">Exam Completed</h2>
+                        <div className="w-16 h-16 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center">
+                          <CheckIcon className="w-8 h-8 text-gray-600" />
+                        </div>
+                        <p className="text-lg mb-3 text-gray-700">
+                          Congratulations! You have successfully completed the exam.
+                        </p>
+                        {examStage === "finished" && (
+                          <p className="text-sm text-gray-600">
+                            Thank you for your participation. We will contact you within 24 hours.
+                          </p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </motion.div>
             )}
-          </div>
-        </div>
+          </AnimatePresence>
+        </motion.div>
       </div>
     </div>
   )

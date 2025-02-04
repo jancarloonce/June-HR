@@ -1,22 +1,44 @@
 import { NextResponse } from "next/server"
 
 export async function GET() {
-  const sheetUrl = process.env.GOOGLE_SHEET_URL
-
-  if (!sheetUrl) {
-    console.error("Google Sheet URL is not set in environment variables")
-    return NextResponse.json({ error: "Sheet URL not configured" }, { status: 500 })
-  }
-
   try {
-    // Validate the URL
-    new URL(sheetUrl)
+    const sheetUrl = process.env.GOOGLE_SHEET_URL
 
-    console.log(`Returning sheet URL: ${sheetUrl}`)
-    return NextResponse.json({ url: sheetUrl })
+    if (!sheetUrl) {
+      throw new Error("Google Sheet URL not configured")
+    }
+
+    // Keep the original edit URL
+    const embeddedUrl = sheetUrl
+
+    // Initial sheet data based on the screenshot
+    const sheetData = {
+      versionA: {
+        totalVisits: 84073,
+        totalOrders: 6574,
+        conversionRate: 7.82,
+        totalVisitsFormula: "=SUM(B17:B29)",
+        totalOrdersFormula: "=SUM(C17:C29)",
+        conversionRateFormula: "=(C29/B29)*100",
+      },
+      versionB: {
+        totalVisits: 30341,
+        totalOrders: 2666,
+        conversionRate: 8.79,
+        totalVisitsFormula: "=SUM(D17:D29)",
+        totalOrdersFormula: "=SUM(E17:E29)",
+        conversionRateFormula: "=(E29/D29)*100",
+      },
+      theoreticalAnswer: "",
+    }
+
+    return NextResponse.json({
+      url: embeddedUrl,
+      data: sheetData,
+    })
   } catch (error) {
-    console.error("Invalid Google Sheet URL:", error)
-    return NextResponse.json({ error: "Invalid Sheet URL" }, { status: 500 })
+    console.error("Error getting sheet data:", error)
+    return NextResponse.json({ error: "Failed to get sheet data" }, { status: 500 })
   }
 }
 
