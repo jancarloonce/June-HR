@@ -1,4 +1,5 @@
 "use client"
+
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,7 +9,12 @@ export function LandingPage() {
   const [isInterviewStarted, setIsInterviewStarted] = useState(false)
 
   const startInterview = () => {
+    console.log("Start Interview button clicked")
     setIsInterviewStarted(true)
+  }
+
+  const handleReturnToLanding = () => {
+    setIsInterviewStarted(false)
   }
 
   return (
@@ -28,7 +34,7 @@ export function LandingPage() {
           </CardContent>
         </Card>
       ) : (
-        <InteractiveAvatar setDebug={(debug: string) => console.log(debug)} />
+        <InteractiveAvatar onReturnToLanding={handleReturnToLanding} />
       )}
     </div>
   )

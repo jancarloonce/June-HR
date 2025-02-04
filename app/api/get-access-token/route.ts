@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 
 const HEYGEN_API_KEY = process.env.HEYGEN_API_KEY
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   console.log("API route called: Attempting to fetch HeyGen token")
   try {
     if (!HEYGEN_API_KEY) {

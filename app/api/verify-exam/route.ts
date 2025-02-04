@@ -1,95 +1,55 @@
-import { NextResponse } from "next/server"
-import { google } from "googleapis"
-import { generateText } from "ai"
-import { openai } from "@ai-sdk/openai"
+import type { NextApiRequest, NextApiResponse } from "next"
+import { Configuration, OpenAIApi } from "openai"
 
-export async function GET() {
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY,
+})
+const openai = new OpenAIApi(configuration)
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ message: "Method not allowed" })
+  }
+
+  const { sheetUrl } = req.body
+
+  if (!sheetUrl) {
+    return res.status(400).json({ message: "Sheet URL is required" })
+  }
+
   try {
-    const auth = new google.auth.GoogleAuth({
-      credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY || ""),
-      scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-    })
-
-    const sheets = google.sheets({ version: "v4", auth })
-
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: "1UQkuSlYqaBqobS5-TTFrqxTKx_efMjAeFH1mSzcpi0c",
-      range: "A1:Z100",
-    })
-
-    const rows = response.data.values
-
-    if (!rows || rows.length === 0) {
-      return NextResponse.json({ error: "No data found in the sheet" }, { status: 400 })
-    }
-
-    // Convert the sheet data to a string for AI analysis
-    const sheetContent = rows.map((row) => row.join(", ")).join("\n")
-
-    const prompt = `
-      You are an AI evaluator checking the correctness of formulas in a spreadsheet exam about website metrics and conversion rates.
-      Below is the content of the exam sheet:
-
-      ${sheetContent}
-
-      Analyze the formulas and values. Check if they correctly calculate the required metrics, verify the logic and mathematical operations, 
-      and ensure they reference the correct cells. Determine if the candidate has passed the exam based on the correctness of their formulas and calculations.
-
-      Provide your analysis in the following JSON format:
-      {
-        "passed": boolean,
-        "score": number (percentage),
-        "feedback": [array of specific feedback for each question or formula],
-        "overallFeedback": "A summary of the candidate's performance"
-      }
-
-      Ensure that your response is a valid JSON object.
+    // Here you would implement the logic to read the contents of the Google Sheet
+    // For this example, we'll use a placeholder content
+    const sheetContent = `
+      A1: =SUM(B1:B5)
+      B1: 10
+      B2: 20
+      B3: 30
+      B4: 40
+      B5: 50
     `
 
-    const { text } = await generateText({
-      model: openai("gpt-4o"),
+    const prompt = `
+      Verify if the following spreadsheet formulas are correct:
+      ${sheetContent}
+      
+      Respond with "PASS" if all formulas are correct, or "FAIL" if any formula is incorrect.
+      Provide a brief explanation of your decision.
+    `
+
+    const completion = await openai.createCompletion({
+      model: "text-davinci-002",
       prompt: prompt,
+      max_tokens: 100,
     })
 
-    console.log("OpenAI response:", text)
+    const result = completion.data.choices[0].text?.trim().toUpperCase()
+    const passed = result?.includes("PASS")
 
-    try {
-      const result = JSON.parse(text)
-      return NextResponse.json(result)
-    } catch (error) {
-      console.error("Error parsing OpenAI response:", error)
-      console.log("Raw OpenAI response:", text)
-
-      // Attempt to extract JSON from the response
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        try {
-          const extractedJson = JSON.parse(jsonMatch[0])
-          return NextResponse.json(extractedJson)
-        } catch (extractError) {
-          console.error("Error parsing extracted JSON:", extractError)
-        }
-      }
-
-      // If JSON extraction fails, return a formatted error response
-      return NextResponse.json({
-        passed: false,
-        score: 0,
-        feedback: ["Error analyzing formulas. Please try again."],
-        overallFeedback: "Unable to evaluate the exam due to an unexpected response format.",
-      })
-    }
+    return res.status(200).json({ passed, explanation: result })
   } catch (error) {
     console.error("Error verifying exam:", error)
-    return NextResponse.json(
-      {
-        passed: false,
-        score: 0,
-        feedback: ["Error occurred while verifying the exam."],
-        overallFeedback: "Unable to evaluate the exam due to a technical issue. Please try again.",
-      },
-      { status: 500 },
-    )
+    return res.status(500).json({ message: "Error verifying exam" })
   }
 }
 

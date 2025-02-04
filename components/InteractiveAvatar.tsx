@@ -1,580 +1,470 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback } from "react"
-import StreamingAvatar, { AvatarQuality, StreamingEvents, VoiceEmotion } from "@heygen/streaming-avatar"
+import { useState, useCallback, useRef, useEffect } from "react"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter } from "@/components/ui/card"
-import { Loader2, Mic, Volume2 } from "lucide-react"
-import { ExamSheet } from "./ExamSheet"
-import { ExamResults } from "./ExamResults"
-import { ExamPlaceholder } from "./ExamPlaceholder"
+import StreamingAvatar, { AvatarQuality, StreamingEvents, TaskType } from "@heygen/streaming-avatar"
+import { ExamArea } from "./ExamArea/ExamArea"
+import { ExamPlaceholder } from "./ExamPlaceholder/ExamPlaceholder"
+import { SkeletonLoader } from "./SkeletonLoader"
+import { CheckIcon } from "lucide-react"
 
-export default function InteractiveAvatar() {
-  const [isLoadingSession, setIsLoadingSession] = useState(false)
-  const [stream, setStream] = useState<MediaStream>()
+interface InteractiveAvatarProps {
+  onReturnToLanding: () => void
+}
+
+export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvatarProps) {
   const [debug, setDebug] = useState<string>("")
-  const [isUserTalking, setIsUserTalking] = useState(false)
-  const [isAvatarTalking, setIsAvatarTalking] = useState(false)
-  const [isSheetLoading, setIsSheetLoading] = useState(false)
-  const [sheetVisible, setSheetVisible] = useState(false)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [isExamInProgress, setIsExamInProgress] = useState(false)
-  const [examStage, setExamStage] = useState<"notStarted" | "inProgress" | "submitted" | "verifying">("notStarted")
-  const [examResult, setExamResult] = useState<any>(null)
-  const [hasSpokenAboutSheet, setHasSpokenAboutSheet] = useState(false)
-
-  const mediaStream = useRef<HTMLVideoElement>(null)
-  const avatar = useRef<StreamingAvatar | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [stream, setStream] = useState<MediaStream | null>(null)
+  const [examStage, setExamStage] = useState<
+    | "notStarted"
+    | "loading"
+    | "inProgress"
+    | "verifying"
+    | "completed"
+    | "additionalQuestion1"
+    | "additionalQuestion2"
+    | "finished"
+  >("notStarted")
+  const [sheetUrl, setSheetUrl] = useState<string | null>(null)
+  const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [isRecognitionActive, setIsRecognitionActive] = useState(false)
+  const [hourlyRate, setHourlyRate] = useState<string | null>(null)
+  const [successfulCampaign, setSuccessfulCampaign] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false) // Added state for submission loading
+  const avatarRef = useRef<StreamingAvatar | null>(null)
   const recognitionRef = useRef<any>(null)
 
   const addDebug = useCallback((message: string) => {
-    setDebug((prevDebug) => `${prevDebug}\n${message}`)
+    setDebug((prevDebug) => `${prevDebug}\n${new Date().toISOString()}: ${message}`)
     console.log(message)
   }, [])
-
-  const speakAvatarResponse = useCallback(
-    async (response: string) => {
-      if (avatar.current && (!sheetVisible || !hasSpokenAboutSheet || examStage === "submitted")) {
-        try {
-          addDebug(`Avatar speaking: ${response}`)
-          await avatar.current.speak({
-            text: response,
-          })
-          if (sheetVisible && !hasSpokenAboutSheet) {
-            setHasSpokenAboutSheet(true)
-          }
-        } catch (error) {
-          addDebug(`Error making avatar speak: ${error instanceof Error ? error.message : JSON.stringify(error)}`)
-        }
-      } else {
-        addDebug(`Avatar not speaking: ${response}`)
-      }
-    },
-    [addDebug, sheetVisible, hasSpokenAboutSheet, examStage],
-  )
-
-  const accessGoogleSheet = useCallback(async (): Promise<boolean> => {
-    if (isSheetLoading) {
-      addDebug("Sheet is already loading, skipping access")
-      return true
-    }
-    addDebug("Accessing Google Sheet")
-    setIsSheetLoading(true)
-    try {
-      // Simulating sheet access
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-      addDebug("Sheet accessed successfully")
-      return true
-    } catch (error) {
-      addDebug(`Error accessing sheet: ${error instanceof Error ? error.message : "Unknown error"}`)
-      return false
-    } finally {
-      setIsSheetLoading(false)
-    }
-  }, [addDebug, isSheetLoading])
-
-  const handleUserInput = useCallback(
-    async (transcript: string) => {
-      addDebug(`Handling user input: ${transcript}`)
-      return transcript
-    },
-    [addDebug],
-  )
-
-  const stopListening = useCallback(() => {
-    if (!isUserTalking) {
-      addDebug("Not listening, no need to stop")
-      return
-    }
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop()
-        addDebug("Stopped listening")
-      } catch (error) {
-        addDebug(`Error stopping speech recognition: ${error}`)
-      }
-    }
-    setIsUserTalking(false)
-  }, [isUserTalking, addDebug])
-
-  const startListening = useCallback(() => {
-    if (isUserTalking || isAvatarTalking) {
-      addDebug("Cannot start listening: User or Avatar is already talking")
-      return
-    }
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.start()
-        addDebug("Started listening")
-      } catch (error) {
-        addDebug(`Error starting speech recognition: ${error}`)
-        setIsUserTalking(false)
-        initializeSpeechRecognition()
-      }
-    } else {
-      addDebug("Speech recognition not initialized")
-      setIsUserTalking(false)
-      initializeSpeechRecognition()
-    }
-  }, [isUserTalking, isAvatarTalking, addDebug])
-
-  const initializeSpeechRecognition = useCallback(() => {
-    if (typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window)) {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      recognitionRef.current = new SpeechRecognition()
-      recognitionRef.current.continuous = true
-      recognitionRef.current.interimResults = false
-      recognitionRef.current.lang = "en-US"
-
-      recognitionRef.current.onstart = () => {
-        addDebug("Speech recognition started")
-        setIsUserTalking(true)
-      }
-
-      recognitionRef.current.onresult = (event: any) => {
-        const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase()
-        addDebug(`Speech recognized: ${transcript}`)
-
-        if (!isAvatarTalking && !isProcessing) {
-          processUserInput(transcript)
-        } else {
-          addDebug(`Ignoring input while avatar is talking or processing`)
-        }
-      }
-
-      recognitionRef.current.onerror = (event: any) => {
-        addDebug(`Speech recognition error: ${event.error}`)
-        setIsUserTalking(false)
-        if (event.error === "no-speech") {
-          addDebug("No speech detected. Restarting listening.")
-          setTimeout(startListening, 1000)
-        } else if (event.error !== "aborted" && examStage !== "submitted") {
-          setTimeout(startListening, 1000)
-        }
-      }
-
-      recognitionRef.current.onend = () => {
-        addDebug("Speech recognition ended")
-        setIsUserTalking(false)
-        if (examStage === "inProgress" && !isAvatarTalking && !isProcessing) {
-          setTimeout(startListening, 1000)
-        }
-      }
-
-      addDebug("Speech recognition initialized")
-    } else {
-      addDebug("Speech recognition not supported in this browser")
-    }
-  }, [addDebug, isAvatarTalking, isProcessing, examStage, startListening])
-
-  const verifyExam = useCallback(async () => {
-    addDebug("Verifying exam...")
-    try {
-      const response = await fetch("/api/verify-exam", {
-        method: "GET",
-      })
-      if (!response.ok) {
-        throw new Error("Failed to verify exam")
-      }
-      const result = await response.json()
-      addDebug(`Exam verification result: ${JSON.stringify(result)}`)
-      return result
-    } catch (error) {
-      addDebug(`Error verifying exam: ${error instanceof Error ? error.message : JSON.stringify(error)}`)
-      return null
-    }
-  }, [addDebug])
-
-  const handleExamSubmission = useCallback(async () => {
-    addDebug("Handling exam submission")
-    setExamStage("verifying")
-    setSheetVisible(false)
-    addDebug(`Sheet visibility set to false`)
-    setIsExamInProgress(false)
-    stopListening()
-
-    await speakAvatarResponse("Thank you for completing the exam. I will now verify your answers.")
-
-    const result = await verifyExam()
-
-    if (result) {
-      setExamResult(result)
-      const passMessage = result.passed
-        ? "Congratulations! You have passed the exam."
-        : "Unfortunately, you did not pass the exam."
-
-      await speakAvatarResponse(`${passMessage} Your score is ${result.score.toFixed(2)}%. ${result.overallFeedback}`)
-    } else {
-      await speakAvatarResponse(
-        "I'm sorry, but there was an error verifying your exam. Please contact the administrator.",
-      )
-    }
-
-    setExamStage("submitted")
-    await speakAvatarResponse("The session is now over. Thank you for your participation.")
-  }, [addDebug, speakAvatarResponse, stopListening, verifyExam])
-
-  const processUserInput = useCallback(
-    async (userMessage: string) => {
-      if (isProcessing) {
-        addDebug("Already processing input, ignoring duplicate")
-        return
-      }
-      setIsProcessing(true)
-      const processedInput = await handleUserInput(userMessage)
-      const lowerMessage = processedInput.toLowerCase()
-      addDebug(`Processing user input: ${lowerMessage}`)
-
-      try {
-        switch (examStage) {
-          case "notStarted":
-            if (lowerMessage.includes("yes") || lowerMessage.includes("ready")) {
-              addDebug("User confirmed readiness. Attempting to open sheet.")
-              stopListening()
-              const success = await accessGoogleSheet()
-              if (success) {
-                addDebug("Sheet opened successfully. Starting exam.")
-                setSheetVisible(true)
-                setIsExamInProgress(true)
-                setExamStage("inProgress")
-                await speakAvatarResponse(
-                  "Understood. I'm opening the exam sheet now. The exam sheet is now open. You can begin the exam. Please say 'done' or 'submit' when you're finished with your answers.",
-                )
-                setTimeout(startListening, 2000)
-              } else {
-                addDebug("Failed to open sheet. Remaining in not started stage.")
-                await speakAvatarResponse(
-                  "I apologize, but I'm having trouble accessing the exam sheet. Please say 'ready' again to retry.",
-                )
-                setTimeout(startListening, 2000)
-              }
-            } else {
-              addDebug("User input not recognized as ready. Prompting again.")
-              await speakAvatarResponse(
-                "I'm sorry, I didn't catch that. Please say 'yes' or 'ready' when you're prepared to start the exam.",
-              )
-              startListening()
-            }
-            break
-          case "inProgress":
-            if (lowerMessage.includes("done") || lowerMessage.includes("submit")) {
-              addDebug("User submitted exam. Initiating submission process.")
-              await handleExamSubmission()
-            } else {
-              addDebug(`Exam in progress. Waiting for 'done' or 'submit'. Heard: ${lowerMessage}`)
-              startListening() //Added startListening here
-            }
-            break
-          default:
-            addDebug(`Unexpected input at exam stage: ${examStage}`)
-        }
-      } catch (error) {
-        addDebug(`Error processing user input: ${error}`)
-      } finally {
-        setIsProcessing(false)
-      }
-    },
-    [
-      isProcessing,
-      addDebug,
-      examStage,
-      handleUserInput,
-      speakAvatarResponse,
-      accessGoogleSheet,
-      stopListening,
-      startListening,
-      handleExamSubmission,
-    ],
-  )
 
   const fetchAccessToken = useCallback(async () => {
     try {
       addDebug("Fetching HeyGen access token...")
-      const response = await fetch("/api/get-access-token", {
-        method: "POST",
-      })
-
+      const response = await fetch("/api/get-access-token", { method: "POST" })
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(`Failed to fetch HeyGen access token: ${errorData.error || response.statusText}`)
+        throw new Error(`Failed to fetch HeyGen access token: ${response.statusText}`)
       }
-
       const data = await response.json()
-      addDebug("HeyGen token response received")
-
-      if (data.error) {
-        throw new Error(data.error)
-      }
-
       if (!data.token) {
         throw new Error("No HeyGen token received in response")
       }
-
-      addDebug("HeyGen Access Token received successfully")
+      addDebug("Successfully retrieved HeyGen access token")
       return data.token
     } catch (error) {
-      addDebug(`Error: ${error instanceof Error ? error.message : "Unknown error occurred"}`)
+      addDebug(`Error fetching access token: ${error instanceof Error ? error.message : "Unknown error occurred"}`)
       return null
     }
   }, [addDebug])
 
-  const startSession = useCallback(async () => {
-    setIsLoadingSession(true)
-    addDebug("Starting session...")
-    const newToken = await fetchAccessToken()
+  const fetchSheetUrl = useCallback(async () => {
+    try {
+      addDebug("Fetching Google Sheet URL...")
+      const response = await fetch("/api/get-sheet-url")
+      if (!response.ok) {
+        throw new Error(`Failed to fetch sheet URL: ${response.statusText}`)
+      }
+      const data = await response.json()
+      if (!data.url) {
+        throw new Error("No sheet URL received in response")
+      }
+      addDebug("Successfully retrieved Google Sheet URL")
+      return data.url
+    } catch (error) {
+      addDebug(`Error fetching sheet URL: ${error instanceof Error ? error.message : "Unknown error occurred"}`)
+      return null
+    }
+  }, [addDebug])
 
-    if (!newToken) {
-      setIsLoadingSession(false)
+  const speakGreeting = useCallback(async () => {
+    if (!avatarRef.current) {
+      addDebug("Avatar not initialized, cannot speak greeting")
+      return
+    }
+
+    addDebug("Speaking greeting...")
+    try {
+      await avatarRef.current.speak({
+        text: "Hello! I'm June from Activate talent, your AI HR interviewer. Are you ready to start the exam?",
+        task_type: TaskType.REPEAT,
+      })
+      addDebug("Greeting spoken successfully")
+    } catch (error) {
+      addDebug(`Error in speakGreeting: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }, [addDebug])
+
+  const startVoiceRecognition = useCallback(
+    (handler: (response: string) => void) => {
+      if ("webkitSpeechRecognition" in window) {
+        recognitionRef.current = new (window as any).webkitSpeechRecognition()
+        recognitionRef.current.continuous = false
+        recognitionRef.current.interimResults = false
+
+        recognitionRef.current.onstart = () => {
+          addDebug("Voice recognition started")
+          setIsRecognitionActive(true)
+        }
+
+        recognitionRef.current.onresult = (event: any) => {
+          const last = event.results.length - 1
+          const userResponse = event.results[last][0].transcript
+          addDebug(`User said: ${userResponse}`)
+          handler(userResponse)
+        }
+
+        recognitionRef.current.onerror = (event: any) => {
+          addDebug(`Speech recognition error: ${event.error}`)
+        }
+
+        recognitionRef.current.onend = () => {
+          addDebug("Voice recognition ended")
+          setIsRecognitionActive(false)
+        }
+
+        recognitionRef.current.start()
+      } else {
+        addDebug("Web Speech API is not supported in this browser")
+      }
+    },
+    [addDebug],
+  )
+
+  const stopVoiceRecognition = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      addDebug("Voice recognition stopped")
+    }
+  }, [addDebug])
+
+  const startExam = useCallback(async () => {
+    addDebug("Starting exam...")
+    setExamStage("loading")
+    const url = await fetchSheetUrl()
+    if (url) {
+      setSheetUrl(url)
+      setExamStage("inProgress")
+      setIsSheetOpen(true)
+      addDebug("Exam started successfully")
+      startVoiceRecognition(handleVoiceSubmission) //Start voice recognition for exam submission
+    } else {
+      setExamStage("notStarted")
+      addDebug("Failed to start exam: Could not fetch sheet URL")
+    }
+  }, [addDebug, fetchSheetUrl, startVoiceRecognition])
+
+  const handleInitialResponse = useCallback(
+    async (userResponse: string) => {
+      addDebug(`Handling initial response: ${userResponse}`)
+      try {
+        const response = await fetch("/api/sentiment-identifier", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            question: "Are you ready to start the exam?",
+            userResponse: userResponse,
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const result = await response.json()
+        const sentiment = result.proceed ? "positive" : "negative"
+        addDebug(`Sentiment analysis result: ${sentiment}`)
+
+        if (sentiment === "positive") {
+          await avatarRef.current?.speak({
+            text: "Great! Let's begin the exam. I'm opening the exam sheet now. Good luck!",
+            task_type: TaskType.REPEAT,
+          })
+          startExam()
+        } else {
+          await avatarRef.current?.speak({
+            text: "I understand. Thank you for your time. You can start the interview again when you're ready.",
+            task_type: TaskType.REPEAT,
+          })
+          avatarRef.current?.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+            onReturnToLanding()
+          })
+        }
+      } catch (error) {
+        addDebug(`Error in handleInitialResponse: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    },
+    [addDebug, startExam, onReturnToLanding],
+  )
+
+  const handleSuccessfulCampaignResponse = useCallback(
+    async (userResponse: string) => {
+      addDebug(`Handling successful campaign response: ${userResponse}`)
+      setSuccessfulCampaign(userResponse)
+      setExamStage("finished")
+      if (avatarRef.current) {
+        await avatarRef.current.speak({
+          text: "Thank you for sharing your experience. We appreciate your time and participation in this interview. We will reach out within 24 hours with the next steps. Goodbye and have a great day!",
+          task_type: TaskType.REPEAT,
+        })
+        avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+          addDebug("Interview completed")
+          stopVoiceRecognition()
+        })
+      }
+    },
+    [addDebug, stopVoiceRecognition],
+  )
+
+  const handleHourlyRateResponse = useCallback(
+    async (userResponse: string) => {
+      addDebug(`Handling hourly rate response: ${userResponse}`)
+      setHourlyRate(userResponse)
+      setExamStage("additionalQuestion2")
+      if (avatarRef.current) {
+        await avatarRef.current.speak({
+          text: "Thank you. Now, can you tell me about your most successful campaign?",
+          task_type: TaskType.REPEAT,
+        })
+        avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+          addDebug("Avatar finished speaking about successful campaign question")
+          startVoiceRecognition(handleSuccessfulCampaignResponse)
+        })
+      }
+    },
+    [addDebug, startVoiceRecognition, handleSuccessfulCampaignResponse],
+  )
+
+  const askAdditionalQuestion = useCallback(async () => {
+    addDebug("Asking additional question...")
+    if (avatarRef.current) {
+      try {
+        setExamStage("additionalQuestion1")
+        await avatarRef.current.speak({
+          text: "Now, I have a couple more questions for you. First, what is your expected hourly rate?",
+          task_type: TaskType.REPEAT,
+        })
+        addDebug("Additional question asked successfully")
+        avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+          startVoiceRecognition(handleHourlyRateResponse)
+        })
+      } catch (error) {
+        addDebug(`Error in askAdditionalQuestion: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    } else {
+      addDebug("Avatar not initialized, cannot ask additional question")
+    }
+  }, [addDebug, startVoiceRecognition, handleHourlyRateResponse])
+
+  const startSession = useCallback(async () => {
+    setIsLoading(true)
+    addDebug("Starting session...")
+    const token = await fetchAccessToken()
+
+    if (!token) {
+      setIsLoading(false)
       addDebug("Failed to start session: No HeyGen access token")
       return
     }
 
     try {
-      addDebug("Initializing StreamingAvatar with token")
-      avatar.current = new StreamingAvatar({
-        token: newToken,
+      addDebug("Initializing StreamingAvatar...")
+      avatarRef.current = new StreamingAvatar({ token })
+
+      addDebug("Setting up event listeners...")
+      const streamReadyPromise = new Promise<void>((resolve) => {
+        avatarRef.current!.on(StreamingEvents.STREAM_READY, (event) => {
+          addDebug("Stream ready event received")
+          console.log(">>>>> Stream ready:", event.detail)
+          setStream(event.detail)
+          resolve()
+        })
       })
 
-      avatar.current.on(StreamingEvents.AVATAR_START_TALKING, () => {
-        addDebug("Avatar started talking")
-        setIsAvatarTalking(true)
-        stopListening()
-      })
-
-      avatar.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-        addDebug("Avatar stopped talking")
-        setIsAvatarTalking(false)
-        if (examStage === "inProgress") {
-          setTimeout(() => {
-            startListening()
-          }, 1000)
+      avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, (e) => {
+        console.log("Avatar stopped talking", e)
+        avatarRef.current!.closeVoiceChat()
+        addDebug("Avatar stopped talking and voice chat closed")
+        if (examStage === "notStarted") {
+          startVoiceRecognition(handleInitialResponse)
         }
       })
 
-      avatar.current.on(StreamingEvents.STREAM_DISCONNECTED, () => {
-        addDebug("Stream disconnected")
-        endSession()
-      })
-
-      avatar.current.on(StreamingEvents.STREAM_READY, async (event) => {
-        setStream(event.detail)
-        addDebug("Stream ready")
-        await speakAvatarResponse(
-          "Hello! I'm June from Activate talent, your AI HR interviewer. Are you ready to take the exam?",
-        )
-        setTimeout(startListening, 2000)
+      avatarRef.current.on(StreamingEvents.ERROR, (error) => {
+        addDebug(`StreamingAvatar error: ${JSON.stringify(error)}`)
       })
 
       addDebug("Creating start avatar...")
-      const res = await avatar.current.createStartAvatar({
+      await avatarRef.current.createStartAvatar({
         quality: AvatarQuality.Low,
         avatarName: "June_HR_public",
-        knowledgeBase:
-          "You are June, an AI HR interviewer from Activate talent. Your role is to conduct interviews and assess candidates. " +
-          "You will greet the candidate, introduce yourself, and ask if they are ready to take the exam. " +
-          "The exam is about website metrics, conversion rates, and data analysis. " +
-          "After the candidate confirms they're ready, you'll open the exam sheet and inform them that they may begin. " +
-          "Do not provide any instructions about how to indicate they've finished. " +
-          "Always start by Greeting and introducing yourself, no need to repeat question" +
-          "Do not speak again until you hear 'Done' or 'Submit' via voice recognition.",
         voice: {
-          rate: 1.5,
-          emotion: VoiceEmotion.NEUTRAL,
+          rate: 1,
         },
         language: "en",
-        disableIdleTimeout: true,
+        knowledgeBase: "",
       })
-
-      addDebug("Avatar created successfully")
+      addDebug("Start avatar created successfully")
 
       addDebug("Starting voice chat...")
-      await avatar.current.startVoiceChat({
-        useSilencePrompt: false,
-      })
-      addDebug("Voice chat started")
+      await avatarRef.current.startVoiceChat()
+      addDebug("Voice chat started successfully")
 
-      initializeSpeechRecognition()
-      startListening()
+      await streamReadyPromise
+      addDebug("Stream is ready, starting greeting...")
+      await speakGreeting()
     } catch (error) {
-      addDebug(`Error starting session: ${error instanceof Error ? error.message : JSON.stringify(error)}`)
-    } finally {
-      setIsLoadingSession(false)
-    }
-  }, [
-    addDebug,
-    fetchAccessToken,
-    initializeSpeechRecognition,
-    speakAvatarResponse,
-    startListening,
-    stopListening,
-    examStage,
-  ])
-
-  const endSession = useCallback(async () => {
-    try {
-      stopListening()
-      await avatar.current?.stopAvatar()
-      setStream(undefined)
-      addDebug("Session ended")
-      setSheetVisible(false)
-      setIsExamInProgress(false)
-      setExamStage("notStarted")
-      setHasSpokenAboutSheet(false) // Reset this state when ending the session
-    } catch (error) {
-      addDebug(`Error ending session: ${error instanceof Error ? error.message : JSON.stringify(error)}`)
-    }
-  }, [addDebug, stopListening])
-
-  useEffect(() => {
-    if (stream && mediaStream.current) {
-      mediaStream.current.srcObject = stream
-      mediaStream.current.onloadedmetadata = () => {
-        mediaStream.current!.play()
-        setDebug("Playing")
+      addDebug(`Error during avatar initialization: ${error instanceof Error ? error.message : String(error)}`)
+      if (error instanceof Error && error.stack) {
+        addDebug(`Error stack: ${error.stack}`)
       }
+    } finally {
+      setIsLoading(false)
     }
-  }, [stream])
+  }, [addDebug, fetchAccessToken, startVoiceRecognition, handleInitialResponse, speakGreeting, examStage])
 
-  useEffect(() => {
-    initializeSpeechRecognition()
-  }, [initializeSpeechRecognition])
+  const handleSubmitExam = useCallback(async () => {
+    addDebug("Submitting exam...")
+    setIsSubmitting(true) //Added
+    setIsSheetOpen(false)
 
-  useEffect(() => {
-    addDebug(`Exam stage changed to: ${examStage}`)
-    if (examStage === "inProgress") {
-      setSheetVisible(true)
-    } else if (examStage === "submitted") {
-      setSheetVisible(false)
+    await new Promise((resolve) => setTimeout(resolve, 1000)) //Simulate processing time
+
+    setExamStage("completed")
+    setIsSubmitting(false) //Added
+    addDebug("Exam submitted and completed")
+
+    if (avatarRef.current) {
+      await avatarRef.current.speak({
+        text: "Congratulations! You have successfully completed the exam.",
+        task_type: TaskType.REPEAT,
+      })
     }
-    addDebug(`Sheet visibility after exam stage change: ${sheetVisible}`)
-  }, [examStage, addDebug, sheetVisible])
 
-  useEffect(() => {
-    addDebug(`Sheet visibility changed to: ${sheetVisible}`)
-  }, [sheetVisible, addDebug])
+    setTimeout(async () => {
+      await askAdditionalQuestion()
+    }, 2000)
+  }, [addDebug, askAdditionalQuestion])
+
+  const handleVoiceSubmission = useCallback(
+    (userResponse: string) => {
+      addDebug(`Voice submission detected: ${userResponse}`)
+      if (userResponse.toLowerCase().includes("submit") || userResponse.toLowerCase().includes("finished")) {
+        addDebug("Voice command to submit exam detected")
+        handleSubmitExam()
+      } else {
+        addDebug("Voice command not recognized as submission, continuing exam")
+        startVoiceRecognition(handleVoiceSubmission)
+      }
+    },
+    [addDebug, handleSubmitExam, startVoiceRecognition],
+  )
 
   useEffect(() => {
     return () => {
+      if (avatarRef.current) {
+        avatarRef.current!.closeVoiceChat()
+        avatarRef.current = null
+      }
       if (recognitionRef.current) {
-        recognitionRef.current.stop()
         recognitionRef.current.abort()
-        recognitionRef.current = null
-        addDebug("Speech recognition cleaned up")
       }
     }
-  }, [addDebug])
+  }, [])
 
   return (
     <div className="w-full min-h-screen bg-gray-100 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col lg:flex-row gap-8">
-          {/* June avatar */}
-          <div className="w-full lg:w-1/3">
+          <div className="w-full lg:w-1/3 space-y-4">
             <Card className="bg-white shadow-md">
-              <CardContent className="p-0">
-                {stream ? (
-                  <div className="relative aspect-video bg-gray-200 rounded-lg overflow-hidden">
-                    <video ref={mediaStream} autoPlay playsInline className="w-full h-full object-cover">
+              <CardContent className="p-6">
+                <div className="aspect-video bg-gray-200 rounded-lg overflow-hidden mb-4">
+                  {isLoading ? (
+                    <SkeletonLoader />
+                  ) : stream ? (
+                    <video
+                      ref={(el) => {
+                        if (el) el.srcObject = stream
+                      }}
+                      autoPlay
+                      playsInline
+                      className="w-full h-full object-cover"
+                    >
                       <track kind="captions" />
                     </video>
-                    <div className="absolute bottom-4 left-4 flex items-center space-x-2 bg-gray-800 bg-opacity-75 rounded-full px-3 py-1">
-                      {isAvatarTalking ? (
-                        <Volume2 className="h-5 w-5 text-gray-200 animate-pulse" />
-                      ) : isUserTalking ? (
-                        <Mic className="h-5 w-5 text-gray-200 animate-pulse" />
-                      ) : isProcessing ? (
-                        <Loader2 className="h-5 w-5 text-gray-200 animate-spin" />
-                      ) : (
-                        <div className="h-3 w-3 bg-green-500 rounded-full"></div>
-                      )}
-                      <span className="text-gray-200 text-sm">
-                        {isAvatarTalking
-                          ? "Speaking"
-                          : isUserTalking
-                            ? "Listening"
-                            : isProcessing
-                              ? "Thinking..."
-                              : "Ready"}
-                      </span>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <p className="text-gray-500">Avatar stream not available</p>
                     </div>
-                  </div>
-                ) : (
-                  <CardContent className="aspect-video bg-gray-200 flex items-center justify-center">
-                    {!isLoadingSession ? (
-                      <Button className="bg-gray-700 hover:bg-gray-800 text-white" size="lg" onClick={startSession}>
-                        Start Voice Chat
-                      </Button>
-                    ) : (
-                      <Loader2 className="h-8 w-8 animate-spin" />
-                    )}
-                  </CardContent>
-                )}
-              </CardContent>
-              <CardFooter className="flex justify-between items-center bg-gray-100">
-                <span className="text-sm text-gray-600">AI Assistant: June</span>
-                {stream && (
-                  <Button className="bg-gray-700 hover:bg-gray-800 text-white" size="sm" onClick={endSession}>
-                    End Session
+                  )}
+                </div>
+                {examStage === "notStarted" && (
+                  <Button onClick={startSession} disabled={isLoading} className="w-full">
+                    {isLoading ? "Starting..." : "Start Session"}
                   </Button>
                 )}
-              </CardFooter>
+              </CardContent>
             </Card>
 
-            {/* Status Cards */}
-            <div className="mt-4 space-y-4">
-              {examStage === "notStarted" && (
-                <Card className="bg-gray-200 shadow-md">
-                  <CardContent>
-                    <p className="text-center text-gray-800 font-semibold">
-                      Say "Yes" or "Ready" to start the exam on website metrics and conversion rates
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
+            <Card className="bg-white shadow-md">
+              <CardContent>
+                <h3 className="font-bold mb-2">Debug Log:</h3>
+                <div className="bg-gray-100 p-4 rounded-md max-h-[60vh] overflow-y-auto">
+                  <pre className="whitespace-pre-wrap text-sm font-mono">{debug}</pre>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-              {examStage === "inProgress" && (
-                <Card className="bg-gray-200 shadow-md">
-                  <CardContent>
-                    <p className="text-center text-gray-800 font-semibold">
-                      Exam in progress. Say "Done" or "Submit" when you've finished.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {examStage === "verifying" && (
-                <Card className="bg-gray-200 shadow-md">
-                  <CardContent>
-                    <p className="text-center text-gray-800 font-semibold">Verifying your exam results...</p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Debug Console */}
-              <Card className="bg-white shadow-md">
-                <CardContent>
-                  <h3 className="text-lg font-bold mb-2 text-gray-800">Debug Console</h3>
-                  <div className="bg-gray-100 p-4 rounded-lg max-h-48 overflow-y-auto">
-                    <p className="font-mono text-sm text-gray-600 whitespace-pre-wrap">{debug}</p>
+          <div className="w-full lg:w-2/3">
+            {examStage === "notStarted" && <ExamPlaceholder />}
+            {examStage === "loading" && <ExamPlaceholder />}
+            {(examStage === "inProgress" || examStage === "verifying") && sheetUrl && (
+              <div>
+                {isSubmitting ? (
+                  <Card className="w-full h-[calc(100vh-2rem)]">
+                    <CardContent className="flex items-center justify-center h-full">
+                      <SkeletonLoader />
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <ExamArea
+                    sheetVisible={isSheetOpen}
+                    isSheetLoading={false}
+                    examStage={examStage}
+                    sheetUrl={sheetUrl}
+                    className="h-[calc(100vh-2rem)]"
+                    onSubmitExam={handleSubmitExam}
+                  />
+                )}
+              </div>
+            )}
+            {(examStage === "completed" ||
+              examStage === "additionalQuestion1" ||
+              examStage === "additionalQuestion2" ||
+              examStage === "finished") && (
+              <Card className="w-full">
+                <CardContent className="p-8">
+                  <div className="text-center">
+                    <h2 className="text-3xl font-bold mb-6 text-green-600">Exam Completed</h2>
+                    <div className="w-16 h-16 mx-auto mb-6 bg-green-100 rounded-full flex items-center justify-center">
+                      <CheckIcon className="w-8 h-8 text-green-600" />
+                    </div>
+                    <p className="text-xl mb-4">Congratulations! You have successfully completed the exam.</p>
+                    {examStage === "finished" && (
+                      <p className="text-lg text-gray-600">
+                        Thank you for your participation. We will contact you within 24 hours.
+                      </p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          </div>
-
-          {/* Sheet and Results */}
-          <div className="w-full lg:w-2/3 space-y-4">
-            <div className="h-[calc(100vh-2rem)]">
-              {" "}
-              {/* Adjust height as needed */}
-              {sheetVisible ? (
-                <ExamSheet isSheetLoading={isSheetLoading} onSheetLoad={() => setIsSheetLoading(false)} />
-              ) : (
-                <ExamPlaceholder />
-              )}
-            </div>
-
-            {examStage === "submitted" && <ExamResults isVerifying={false} examResult={examResult} />}
+            )}
           </div>
         </div>
       </div>
