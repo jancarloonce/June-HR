@@ -53,7 +53,6 @@ export async function POST(req: Request) {
     })
     const sheets = google.sheets({ version: "v4", auth })
 
-    // Fetch the problem statement (assuming it's in cell A1)
     const problemResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
       range: "A1:A3",

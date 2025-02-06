@@ -36,6 +36,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     | "completed"
     | "additionalQuestion1"
     | "additionalQuestion2"
+    | "followUpQuestion"
     | "finished"
     | "summary"
   >("notStarted")
@@ -55,6 +56,8 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   const [initialSheetData, setInitialSheetData] = useState<any>(null)
   const [examResult, setExamResult] = useState<ExamResult | null>(null)
   const [summaryText, setSummaryText] = useState<string | null>(null)
+  const [followUpQuestion, setFollowUpQuestion] = useState<string | null>(null)
+  const [followUpResponse, setFollowUpResponse] = useState<string | null>(null)
 
   const fetchAccessToken = useCallback(async () => {
     try {
@@ -160,7 +163,11 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
           console.log("Voice recognition ended")
           setIsRecognitionActive(false)
           // Restart recognition if it ends prematurely
-          if (examStage === "additionalQuestion1" || examStage === "additionalQuestion2") {
+          if (
+            examStage === "additionalQuestion1" ||
+            examStage === "additionalQuestion2" ||
+            examStage === "followUpQuestion"
+          ) {
             startVoiceRecognition(handler)
           }
         }
@@ -191,21 +198,60 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     async (userResponse: string) => {
       console.log(`Handling successful campaign response: ${userResponse}`)
       setSuccessfulCampaign(userResponse)
-      setExamStage("finished")
-      setIsSummaryAvailable(true)
-      if (avatarRef.current) {
-        await avatarRef.current.speak({
-          text: "Thank you for sharing your experience. We appreciate your time and participation in this interview. The interview is now complete. You can now review the summary or return to the landing page when you're ready.",
-          task_type: TaskType.REPEAT,
+
+      try {
+        const response = await fetch("/api/generate-follow-up", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ campaignDescription: userResponse }),
         })
-        avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-          console.log("Interview completed")
-          stopVoiceRecognition()
-        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const result = await response.json()
+        setFollowUpQuestion(result.followUpQuestion)
+
+        setExamStage("followUpQuestion")
+        if (avatarRef.current) {
+          await avatarRef.current.speak({
+            text: `Thank you for sharing that experience. ${result.followUpQuestion}`,
+            task_type: TaskType.REPEAT,
+          })
+          avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+            startVoiceRecognition(handleFollowUpResponse)
+          })
+        }
+      } catch (error) {
+        console.error("Error generating follow-up question:", error)
+        finishInterview()
       }
     },
-    [stopVoiceRecognition],
+    [startVoiceRecognition],
   )
+
+  const handleFollowUpResponse = useCallback((userResponse: string) => {
+    console.log(`Handling follow-up response: ${userResponse}`)
+    setFollowUpResponse(userResponse)
+    finishInterview()
+  }, [])
+
+  const finishInterview = useCallback(() => {
+    setExamStage("finished")
+    setIsSummaryAvailable(true)
+    if (avatarRef.current) {
+      avatarRef.current.speak({
+        text: "Thank you for sharing those additional details. We appreciate your time and participation in this interview. The interview is now complete. You can now review the summary or return to the landing page when you're ready.",
+        task_type: TaskType.REPEAT,
+      })
+      avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+        stopVoiceRecognition()
+      })
+    }
+  }, [stopVoiceRecognition])
 
   const handleHourlyRateResponse = useCallback(
     async (userResponse: string) => {
@@ -527,6 +573,8 @@ ${examResult?.feedback}
 Additional Information:
 - Expected Hourly Rate: The candidate stated their expected rate is ${hourlyRate}.
 - Successful Campaign: When asked about their most successful campaign, the candidate mentioned: ${successfulCampaign}.
+- Follow-up Question: ${followUpQuestion}
+  Candidate's Response: ${followUpResponse}
 
 Overall, ${examResult?.isCorrect ? "the candidate demonstrated proficiency in the required skills" : "the candidate may need additional training or may not be suitable for the position"}. 
 I recommend ${examResult?.isCorrect ? "considering them for the next stage of the interview process" : "reviewing their results in detail before making a decision"}.
@@ -548,7 +596,7 @@ Do you have any questions about the candidate's performance or need any addition
     } catch (error) {
       console.log(`Error in speakSummary: ${error instanceof Error ? error.message : String(error)}`)
     }
-  }, [examResult, hourlyRate, successfulCampaign])
+  }, [examResult, hourlyRate, successfulCampaign, followUpQuestion, followUpResponse])
 
   useEffect(() => {
     return () => {
@@ -638,7 +686,8 @@ Do you have any questions about the candidate's performance or need any addition
               {(examStage === "completed" ||
                 examStage === "additionalQuestion1" ||
                 examStage === "additionalQuestion2" ||
-                examStage === "finished") && (
+                examStage === "finished" ||
+                examStage === "followUpQuestion") && (
                 <Card className="w-full bg-gray-50 shadow-sm">
                   <CardContent className="p-6">
                     <div className="text-center">

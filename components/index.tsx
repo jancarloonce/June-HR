@@ -17,7 +17,6 @@ export default function InteractiveAvatar() {
     useAvatarLogic(addDebug)
 
   useEffect(() => {
-    //No speech recognition or exam logic needed here.
   }, [])
 
   return (

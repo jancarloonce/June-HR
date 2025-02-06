@@ -11,7 +11,6 @@ export async function GET() {
     // Keep the original edit URL
     const embeddedUrl = sheetUrl
 
-    // Initial sheet data based on the screenshot
     const sheetData = {
       versionA: {
         totalVisits: 84073,

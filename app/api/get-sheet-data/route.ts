@@ -2,8 +2,6 @@ import { NextResponse } from "next/server"
 
 export async function GET() {
   try {
-    // This is a placeholder for actual sheet data fetching logic
-    // You should implement the actual logic to fetch data from your sheet
     const sheetData = {
       versionA: {
         totalVisits: 84073,
