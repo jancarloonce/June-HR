@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 
 interface ExamAreaProps {
   sheetUrl?: string
-  examStage: "loading" | "inProgress" | "submitted"
+  examStage: "loading" | "inProgress" | "verifying" | "completed" | "failed" | "error" | "submitted"
   onSubmitExam: () => void
   sheetVisible: boolean
   isSheetLoading: boolean
@@ -39,6 +39,31 @@ export const ExamArea: React.FC<ExamAreaProps> = ({
                 <Button onClick={onSubmitExam} className="bg-black hover:bg-gray-800 text-white">
                   Submit Exam
                 </Button>
+              </div>
+            )}
+            {examStage === "verifying" && (
+              <div className="mt-2 flex justify-center">
+                <p>Verifying your answers...</p>
+              </div>
+            )}
+            {examStage === "completed" && (
+              <div className="mt-2 flex justify-center">
+                <p>Exam completed successfully!</p>
+              </div>
+            )}
+            {examStage === "failed" && (
+              <div className="mt-2 flex justify-center">
+                <p>Exam failed.</p>
+              </div>
+            )}
+            {examStage === "error" && (
+              <div className="mt-2 flex justify-center">
+                <p>An error occurred.</p>
+              </div>
+            )}
+            {examStage === "submitted" && (
+              <div className="mt-2 flex justify-center">
+                <p>Exam submitted.</p>
               </div>
             )}
           </>
