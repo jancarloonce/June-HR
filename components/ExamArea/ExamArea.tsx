@@ -1,3 +1,4 @@
+import type React from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
@@ -9,6 +10,7 @@ interface ExamAreaProps {
   isSheetLoading: boolean
   initialSheetData: any
   className?: string
+  isFullScreen: boolean
 }
 
 export const ExamArea: React.FC<ExamAreaProps> = ({
@@ -19,15 +21,16 @@ export const ExamArea: React.FC<ExamAreaProps> = ({
   isSheetLoading,
   initialSheetData,
   className,
+  isFullScreen,
 }) => {
   return (
-    <Card className={`w-full bg-gray-50 shadow-sm ${className}`}>
-      <CardContent className="p-4">
+    <Card className={`w-full bg-gray-50 shadow-sm ${className} ${isFullScreen ? "fixed inset-0 z-40" : ""}`}>
+      <CardContent className={`p-4 ${isFullScreen ? "h-full flex flex-col" : ""}`}>
         {sheetVisible && sheetUrl ? (
           <>
             <iframe
               src={`${sheetUrl}?embedded=true&rm=minimal`}
-              className="w-full h-[calc(100vh-8rem)] border-none"
+              className={`w-full ${isFullScreen ? "flex-grow" : "h-[calc(100vh-8rem)]"} border-none`}
               title="Exam Sheet"
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
             />
@@ -40,7 +43,7 @@ export const ExamArea: React.FC<ExamAreaProps> = ({
             )}
           </>
         ) : (
-          <div className="flex items-center justify-center h-[calc(100vh-2rem)]">
+          <div className={`flex items-center justify-center ${isFullScreen ? "h-full" : "h-[calc(100vh-2rem)]"}`}>
             <p className="text-gray-500">
               {isSheetLoading ? "Loading exam sheet..." : "Exam sheet will appear here when ready."}
             </p>
