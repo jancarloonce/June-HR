@@ -39,6 +39,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     | "followUpQuestion"
     | "finished"
     | "summary"
+    | "error"
   >("notStarted")
   const [sheetUrl, setSheetUrl] = useState<string | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
