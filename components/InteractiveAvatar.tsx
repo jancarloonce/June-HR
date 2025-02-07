@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import StreamingAvatar, { AvatarQuality, StreamingEvents, TaskType } from "@heygen/streaming-avatar"
 import { ExamArea } from "./ExamArea/ExamArea"
 import { SkeletonLoader } from "./SkeletonLoader"
-import { CheckIcon, XIcon, Maximize, Minimize } from "lucide-react"
+import { CheckIcon, XIcon } from "lucide-react"
 import { motion } from "framer-motion"
 
 interface InteractiveAvatarProps {
@@ -29,20 +29,20 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   const [isLoading, setIsLoading] = useState(false)
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [examStage, setExamStage] = useState<
-  | "notStarted"
-  | "loading"
-  | "inProgress"
-  | "verifying"
-  | "completed"
-  | "failed"
-  | "error"
-  | "submitted"
-  | "additionalQuestion1"
-  | "additionalQuestion2"
-  | "followUpQuestion"
-  | "finished"
-  | "summary"
->("notStarted")
+    | "notStarted"
+    | "loading"
+    | "inProgress"
+    | "verifying"
+    | "completed"
+    | "failed"
+    | "error"
+    | "submitted"
+    | "additionalQuestion1"
+    | "additionalQuestion2"
+    | "followUpQuestion"
+    | "finished"
+    | "summary"
+  >("notStarted")
   const [sheetUrl, setSheetUrl] = useState<string | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [isRecognitionActive, setIsRecognitionActive] = useState(false)
@@ -54,6 +54,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   const [isVoiceInputActive, setIsVoiceInputActive] = useState(false)
   const [isExamStarted, setIsExamStarted] = useState(false)
   const [isExamInProgress, setIsExamInProgress] = useState(false)
+  const [isFullScreen, setIsFullScreen] = useState(false) // Added state for full screen
   const avatarRef = useRef<StreamingAvatar | null>(null)
   const recognitionRef = useRef<any>(null)
   const [initialSheetData, setInitialSheetData] = useState<any>(null)
@@ -426,7 +427,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
       setExamStage("notStarted")
       console.log(`Failed to start exam: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
-  }, [pauseVoiceRecognition])
+  }, [pauseVoiceRecognition, setIsExamInProgress]) // Added setIsExamInProgress to dependencies
 
   const handleInitialResponse = useCallback(
     async (userResponse: string) => {
@@ -527,10 +528,6 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
         }
       })
 
-      avatarRef.current.on(StreamingEvents.ERROR, (error) => {
-        console.log(`StreamingAvatar error: ${JSON.stringify(error)}`)
-      })
-
       console.log("Creating start avatar...")
       await avatarRef.current.createStartAvatar({
         quality: AvatarQuality.Low,
@@ -558,7 +555,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     } finally {
       setIsLoading(false)
     }
-  }, [fetchAccessToken, startVoiceRecognition, handleInitialResponse, speakGreeting, examStage])
+  }, [fetchAccessToken, startVoiceRecognition, handleInitialResponse, speakGreeting, examStage, isExamInProgress]) // Added isExamInProgress to dependencies
 
   const speakSummary = useCallback(async () => {
     if (!avatarRef.current) {
@@ -682,6 +679,7 @@ Do you have any questions about the candidate's performance or need any addition
                       initialSheetData={initialSheetData}
                       className="h-[calc(100vh-10rem)]"
                       onSubmitExam={handleSubmitExam}
+                      isFullScreen={isFullScreen} // Pass the state variable here
                     />
                   )}
                 </div>
@@ -748,6 +746,4 @@ Do you have any questions about the candidate's performance or need any addition
     </div>
   )
 }
-
-
 
