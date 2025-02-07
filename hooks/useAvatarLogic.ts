@@ -229,9 +229,6 @@ export function useAvatarLogic(addDebug: (message: string) => void) {
         }, 1000)
       })
 
-      avatar.current.on(StreamingEvents.ERROR, (error) => {
-        addDebug(`StreamingAvatar error: ${JSON.stringify(error)}`)
-      })
 
       addDebug("Creating start avatar...")
       await avatar.current.createStartAvatar({

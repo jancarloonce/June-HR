@@ -531,9 +531,6 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
         }
       })
 
-      avatarRef.current.on(StreamingEvents.ERROR, (error) => {
-        console.log(`StreamingAvatar error: ${JSON.stringify(error)}`)
-      })
 
       console.log("Creating start avatar...")
       await avatarRef.current.createStartAvatar({
