@@ -29,20 +29,20 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   const [isLoading, setIsLoading] = useState(false)
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [examStage, setExamStage] = useState<
-    | "notStarted"
-    | "loading"
-    | "inProgress"
-    | "verifying"
-    | "completed"
-    | "failed"
-    | "error"
-    | "submitted"
-    | "additionalQuestion1"
-    | "additionalQuestion2"
-    | "followUpQuestion"
-    | "finished"
-    | "summary"
-  >("notStarted")
+  | "notStarted"
+  | "loading"
+  | "inProgress"
+  | "verifying"
+  | "completed"
+  | "failed"
+  | "error"
+  | "submitted"
+  | "additionalQuestion1"
+  | "additionalQuestion2"
+  | "followUpQuestion"
+  | "finished"
+  | "summary"
+>("notStarted")
   const [sheetUrl, setSheetUrl] = useState<string | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [isRecognitionActive, setIsRecognitionActive] = useState(false)
@@ -54,7 +54,6 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   const [isVoiceInputActive, setIsVoiceInputActive] = useState(false)
   const [isExamStarted, setIsExamStarted] = useState(false)
   const [isExamInProgress, setIsExamInProgress] = useState(false)
-  const [isFullScreen, setIsFullScreen] = useState(false)
   const avatarRef = useRef<StreamingAvatar | null>(null)
   const recognitionRef = useRef<any>(null)
   const [initialSheetData, setInitialSheetData] = useState<any>(null)
@@ -62,7 +61,6 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   const [summaryText, setSummaryText] = useState<string | null>(null)
   const [followUpQuestion, setFollowUpQuestion] = useState<string | null>(null)
   const [followUpResponse, setFollowUpResponse] = useState<string | null>(null)
-  const isRecognitionActiveRef = useRef(false)
 
   const fetchAccessToken = useCallback(async () => {
     try {
@@ -150,7 +148,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
 
         recognitionRef.current.onstart = () => {
           console.log("Voice recognition started")
-          isRecognitionActiveRef.current = true
+          setIsRecognitionActive(true)
         }
 
         recognitionRef.current.onresult = (event: any) => {
@@ -166,7 +164,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
 
         recognitionRef.current.onend = () => {
           console.log("Voice recognition ended")
-          isRecognitionActiveRef.current = false
+          setIsRecognitionActive(false)
           // Restart recognition if it ends prematurely
           if (
             examStage === "additionalQuestion1" ||
@@ -433,8 +431,8 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   const handleInitialResponse = useCallback(
     async (userResponse: string) => {
       console.log(`Handling initial response: ${userResponse}`)
-      if (examStage !== "notStarted" || isExamStarted) {
-        console.log("Skipping sentiment analysis: exam has already started")
+      if (examStage !== "notStarted") {
+        console.log("Skipping sentiment analysis for non-initial responses")
         return
       }
 
@@ -486,7 +484,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
         console.log(`Error in handleInitialResponse: ${error instanceof Error ? error.message : String(error)}`)
       }
     },
-    [startExam, onReturnToLanding, pauseVoiceRecognition, examStage, isExamStarted],
+    [startExam, onReturnToLanding, pauseVoiceRecognition, examStage],
   )
 
   const startSession = useCallback(async () => {
@@ -505,7 +503,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
       avatarRef.current = new StreamingAvatar({ token })
 
       console.log("Setting up event listeners...")
-      await new Promise<void>((resolve) => {
+      const streamReadyPromise = new Promise<void>((resolve) => {
         avatarRef.current!.on(StreamingEvents.STREAM_READY, (event) => {
           console.log("Stream ready event received")
           console.log(">>>>> Stream ready:", event.detail)
@@ -519,18 +517,19 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
         if (avatarRef.current) {
           avatarRef.current.closeVoiceChat()
           console.log("Avatar stopped talking and voice chat closed")
-          if (!isRecognitionActiveRef.current) {
-            if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-              startVoiceRecognition(handleInitialResponse)
-            } else if (examStage === "inProgress") {
-              startVoiceRecognition(handleVoiceSubmission)
-            }
+          if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
+            startVoiceRecognition(handleInitialResponse)
+          } else {
+            pauseVoiceRecognition()
           }
         } else {
           console.log("Avatar reference is null, cannot close voice chat")
         }
       })
 
+      avatarRef.current.on(StreamingEvents.ERROR, (error) => {
+        console.log(`StreamingAvatar error: ${JSON.stringify(error)}`)
+      })
 
       console.log("Creating start avatar...")
       await avatarRef.current.createStartAvatar({
@@ -548,6 +547,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
       await avatarRef.current.startVoiceChat()
       console.log("Voice chat started successfully")
 
+      await streamReadyPromise
       console.log("Stream is ready, starting greeting...")
       await speakGreeting()
     } catch (error) {
@@ -558,17 +558,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     } finally {
       setIsLoading(false)
     }
-  }, [
-    fetchAccessToken,
-    startVoiceRecognition,
-    handleInitialResponse,
-    speakGreeting,
-    examStage,
-    isExamStarted,
-    isExamInProgress,
-    handleVoiceSubmission,
-    pauseVoiceRecognition,
-  ])
+  }, [fetchAccessToken, startVoiceRecognition, handleInitialResponse, speakGreeting, examStage])
 
   const speakSummary = useCallback(async () => {
     if (!avatarRef.current) {
@@ -623,31 +613,24 @@ Do you have any questions about the candidate's performance or need any addition
     }
   }, [])
 
-  const toggleFullScreen = useCallback(() => {
-    setIsFullScreen((prev) => !prev)
-  }, [])
-
   return (
     <div className="w-full min-h-screen bg-white p-4 md:p-8 pt-16">
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col lg:flex-row gap-8 items-start justify-between">
           <motion.div
-            className={`w-full ${isFullScreen ? "fixed inset-0 z-50" : isAvatarCentered ? "lg:w-2/3 mx-auto" : "lg:w-1/3"} space-y-4`}
-            animate={isAvatarCentered && !isFullScreen ? { scale: 1.2, y: 0 } : { scale: 1, y: 0 }}
+            className={`w-full ${isAvatarCentered ? "lg:w-2/3 mx-auto" : "lg:w-1/3"} space-y-4`}
+            animate={isAvatarCentered ? { scale: 1.2, y: 0 } : { scale: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            <Card className={`bg-gray-50 shadow-md ${isFullScreen ? "h-full" : ""}`}>
-              <CardContent className={`p-4 ${isFullScreen ? "h-full flex flex-col" : ""}`}>
-                <div
-                  className={`${isFullScreen ? "flex-grow" : "aspect-video"} bg-gray-100 rounded-lg overflow-hidden mb-4 relative`}
-                >
+            <Card className="bg-gray-50 shadow-sm">
+              <CardContent className="p-4">
+                <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden mb-4">
                   {isLoading ? (
                     <SkeletonLoader />
                   ) : stream ? (
                     <video
-                      key={stream ? "stream-active" : "stream-inactive"}
                       ref={(el) => {
-                        if (el && stream) el.srcObject = stream
+                        if (el) el.srcObject = stream
                       }}
                       autoPlay
                       playsInline
@@ -660,14 +643,8 @@ Do you have any questions about the candidate's performance or need any addition
                       <p className="text-gray-500">Avatar stream not available</p>
                     </div>
                   )}
-                  <Button
-                    onClick={toggleFullScreen}
-                    className="absolute top-2 right-2 bg-black bg-opacity-50 hover:bg-opacity-75 text-white"
-                  >
-                    {isFullScreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
-                  </Button>
                 </div>
-                {examStage === "notStarted" && !isFullScreen && (
+                {examStage === "notStarted" && (
                   <Button
                     onClick={startSession}
                     disabled={isLoading}
@@ -680,7 +657,7 @@ Do you have any questions about the candidate's performance or need any addition
             </Card>
           </motion.div>
 
-          {!isAvatarCentered && !isFullScreen && (
+          {!isAvatarCentered && (
             <motion.div
               className="w-full lg:w-2/3 lg:h-[calc(100vh-8rem)]"
               initial={{ opacity: 0, x: 50 }}
@@ -705,7 +682,6 @@ Do you have any questions about the candidate's performance or need any addition
                       initialSheetData={initialSheetData}
                       className="h-[calc(100vh-10rem)]"
                       onSubmitExam={handleSubmitExam}
-                      isFullScreen={isFullScreen}
                     />
                   )}
                 </div>
@@ -714,10 +690,7 @@ Do you have any questions about the candidate's performance or need any addition
                 examStage === "additionalQuestion1" ||
                 examStage === "additionalQuestion2" ||
                 examStage === "finished" ||
-                examStage === "followUpQuestion" ||
-                examStage === "failed" ||
-                examStage === "error" ||
-                examStage === "submitted") && (
+                examStage === "followUpQuestion") && (
                 <Card className="w-full bg-gray-50 shadow-sm">
                   <CardContent className="p-6">
                     <div className="text-center">
@@ -775,4 +748,6 @@ Do you have any questions about the candidate's performance or need any addition
     </div>
   )
 }
+
+
 
