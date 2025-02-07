@@ -162,7 +162,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
         recognitionRef.current.onend = () => {
           console.log("Voice recognition ended")
           setIsRecognitionActive(false)
-          // Restart recognition if it ends prematurely
+
           if (
             examStage === "additionalQuestion1" ||
             examStage === "additionalQuestion2" ||
