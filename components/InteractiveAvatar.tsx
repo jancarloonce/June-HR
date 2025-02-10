@@ -356,11 +356,8 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
         setExamStage("finished")
         if (avatarRef.current) {
           await avatarRef.current.speak({
-            text: "Thank you for your participation. We appreciate your time. Goodbye and have a great day!",
+            text: "I'm sorry, but there were some issues with your exam. You can review the feedback and try again if you'd like.",
             task_type: TaskType.REPEAT,
-          })
-          avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-            onReturnToLanding()
           })
         }
       }
@@ -376,7 +373,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     } finally {
       setIsSubmitting(false)
     }
-  }, [sheetUrl, stopVoiceRecognition, askAdditionalQuestion, onReturnToLanding])
+  }, [sheetUrl, stopVoiceRecognition, askAdditionalQuestion])
 
   const handleVoiceSubmission = useCallback(
     (userResponse: string) => {
@@ -427,7 +424,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
       setExamStage("notStarted")
       console.log(`Failed to start exam: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
-  }, [pauseVoiceRecognition, setIsExamInProgress]) // Added setIsExamInProgress to dependencies
+  }, [pauseVoiceRecognition]) // Removed setIsExamInProgress from dependencies
 
   const handleInitialResponse = useCallback(
     async (userResponse: string) => {
@@ -557,44 +554,31 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     }
   }, [fetchAccessToken, startVoiceRecognition, handleInitialResponse, speakGreeting, examStage, isExamInProgress]) // Added isExamInProgress to dependencies
 
-  const speakSummary = useCallback(async () => {
-    if (!avatarRef.current) {
-      console.log("Avatar not initialized, cannot speak summary")
-      return
-    }
+  const downloadSummary = useCallback(() => {
+    const csvContent = [
+      ["Question", "Answer"],
+      ["Exam Result", examResult?.isCorrect ? "Passed" : "Failed"],
+      ["Formula Accuracy", `${examResult?.formulaAccuracy}%`],
+      ["Calculation Accuracy", `${examResult?.calculationAccuracy}%`],
+      ["Feedback", examResult?.feedback || ""],
+      ["Expected Hourly Rate", hourlyRate || ""],
+      ["Most Successful Campaign", successfulCampaign || ""],
+      ["Follow-up Question", followUpQuestion || ""],
+      ["Follow-up Response", followUpResponse || ""],
+    ]
+      .map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(","))
+      .join("\n")
 
-    console.log("Speaking interview summary...")
-    const summaryText = `I've completed the interview with the candidate. Here's a summary of their performance:
-
-Exam Results: The candidate ${examResult?.isCorrect ? "passed" : "did not pass"} the exam. 
-Their formula accuracy was ${examResult?.formulaAccuracy}% and calculation accuracy was ${examResult?.calculationAccuracy}%. 
-${examResult?.feedback}
-
-Additional Information:
-- Expected Hourly Rate: The candidate stated their expected rate is ${hourlyRate}.
-- Successful Campaign: When asked about their most successful campaign, the candidate mentioned: ${successfulCampaign}.
-- Follow-up Question: ${followUpQuestion}
-  Candidate's Response: ${followUpResponse}
-
-Overall, ${examResult?.isCorrect ? "the candidate demonstrated proficiency in the required skills" : "the candidate may need additional training or may not be suitable for the position"}. 
-I recommend ${examResult?.isCorrect ? "considering them for the next stage of the interview process" : "reviewing their results in detail before making a decision"}.
-
-Do you have any questions about the candidate's performance or need any additional information?`
-
-    try {
-      if (avatarRef.current) {
-        await avatarRef.current.speak({
-          text: summaryText,
-          task_type: TaskType.REPEAT,
-        })
-      } else {
-        console.log("Avatar reference is null, cannot speak")
-      }
-      console.log("Summary spoken successfully")
-      setExamStage("summary")
-      setSummaryText(summaryText)
-    } catch (error) {
-      console.log(`Error in speakSummary: ${error instanceof Error ? error.message : String(error)}`)
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const link = document.createElement("a")
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob)
+      link.setAttribute("href", url)
+      link.setAttribute("download", "interview_summary.csv")
+      link.style.visibility = "hidden"
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
     }
   }, [examResult, hourlyRate, successfulCampaign, followUpQuestion, followUpResponse])
 
@@ -713,8 +697,8 @@ Do you have any questions about the candidate's performance or need any addition
                             The interview is complete. You can now review the summary or return to the landing page.
                           </p>
                           <div className="mt-6 space-x-4">
-                            <Button onClick={speakSummary} className="bg-blue-500 hover:bg-blue-600 text-white">
-                              View Summary
+                            <Button onClick={downloadSummary} className="bg-green-500 hover:bg-green-600 text-white">
+                              Download Summary
                             </Button>
                             <Button onClick={onReturnToLanding} className="bg-gray-500 hover:bg-gray-600 text-white">
                               Return to Landing Page
@@ -731,7 +715,10 @@ Do you have any questions about the candidate's performance or need any addition
                   <CardContent className="p-6">
                     <h2 className="text-2xl font-semibold mb-4 text-gray-800">Interview Summary</h2>
                     <pre className="whitespace-pre-wrap text-sm text-gray-700">{summaryText}</pre>
-                    <div className="mt-6">
+                    <div className="mt-6 space-x-4">
+                      <Button onClick={downloadSummary} className="bg-green-500 hover:bg-green-600 text-white">
+                        Download Summary
+                      </Button>
                       <Button onClick={onReturnToLanding} className="bg-gray-500 hover:bg-gray-600 text-white">
                         Return to Landing Page
                       </Button>

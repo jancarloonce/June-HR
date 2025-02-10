@@ -1,17 +1,13 @@
-import { NextResponse } from "next/server"
-import { google } from "googleapis"
-import OpenAI from "openai"
+import { NextResponse } from "next/server";
+import { google } from "googleapis";
 
-const GOOGLE_SERVICE_ACCOUNT_KEY = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY || "{}")
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ""
-const FORCE_EXAM_RESULT = process.env.FORCE_EXAM_RESULT
+const GOOGLE_SERVICE_ACCOUNT_KEY = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY || "{}");
+const FORCE_EXAM_RESULT = process.env.FORCE_EXAM_RESULT;
 
-const openai = new OpenAI({ apiKey: OPENAI_API_KEY })
-
-export async function POST(req: Request) {
+export async function POST(req) {
   try {
+    // Forced test mode for debugging
     if (FORCE_EXAM_RESULT === "pass" || FORCE_EXAM_RESULT === "fail") {
-      // Return a mock result based on the FORCE_EXAM_RESULT
       return NextResponse.json({
         isCorrect: FORCE_EXAM_RESULT === "pass",
         feedback: FORCE_EXAM_RESULT === "pass" ? "Test pass result" : "Test fail result",
@@ -20,116 +16,116 @@ export async function POST(req: Request) {
         errors: FORCE_EXAM_RESULT === "pass" ? [] : ["Test error"],
         suggestions: FORCE_EXAM_RESULT === "pass" ? [] : ["Test suggestion"],
         versionA: {
-          expected: 100,
-          submitted: FORCE_EXAM_RESULT === "pass" ? 100 : 0,
+          expected: 7.82,
+          submitted: FORCE_EXAM_RESULT === "pass" ? 7.82 : 0,
           isCorrect: FORCE_EXAM_RESULT === "pass",
         },
-        versionB: {
-          expected: 100,
-          submitted: FORCE_EXAM_RESULT === "pass" ? 100 : 0,
-          isCorrect: FORCE_EXAM_RESULT === "pass",
-        },
-      })
+      });
     }
 
-    const body = await req.json()
-    const sheetUrl = body?.sheetUrl
+    // Parse request body
+    const body = await req.json();
+    const sheetUrl = body?.sheetUrl;
 
+    // Validate sheet URL
     if (!sheetUrl || typeof sheetUrl !== "string") {
-      return NextResponse.json({ error: "Valid Sheet URL is required" }, { status: 400 })
+      return NextResponse.json({ error: "Valid Sheet URL is required" }, { status: 400 });
     }
 
-    // Extract sheet ID from URL
-    const match = sheetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/)
+    // Extract Sheet ID from URL
+    const match = sheetUrl.match(/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
     if (!match || !match[1]) {
-      return NextResponse.json({ error: "Invalid Google Sheet URL" }, { status: 400 })
+      return NextResponse.json({ error: "Invalid Google Sheet URL" }, { status: 400 });
     }
-    const sheetId = match[1]
+    const sheetId = match[1];
 
-    // Authenticate with Google Sheets API
+    // Authenticate Google Sheets API
     const auth = new google.auth.GoogleAuth({
       credentials: GOOGLE_SERVICE_ACCOUNT_KEY,
       scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-    })
-    const sheets = google.sheets({ version: "v4", auth })
+    });
+    const sheets = google.sheets({ version: "v4", auth });
 
-    const problemResponse = await sheets.spreadsheets.values.get({
-      spreadsheetId: sheetId,
-      range: "A1:A3",
-    })
-
-    const problemStatement =
-      problemResponse.data.values?.map((row) => row[0]).join("\n") || "Problem statement not found"
-
-    // Fetch the relevant cell ranges
-    const ranges = ["B30", "D30", "C30:C31", "E30:E31"]
+    // Request cell values, ensuring C33 returns the formula
+    const ranges = ["C33", "B31:C31"];
     const response = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: sheetId,
       ranges: ranges,
-    })
+      valueRenderOption: "FORMULA", // Ensure formulas are returned, not values
+    });
 
-    const [versionARate, versionBRate, versionAFormulas, versionBFormulas] = response.data.valueRanges || []
+    const [conversionRateFormula, versionAData] = response.data.valueRanges || [];
 
-    // Prepare the prompt for OpenAI
-    const prompt = `
-    You are an expert in evaluating Google Sheets formulas and results for an e-commerce analytics exam.
+    // Debugging logs
+    console.log("Raw API Response:", JSON.stringify(response.data, null, 2));
 
-    Problem Statement:
-    ${problemStatement}
+    // Extract formula from C33
+    const actualFormula = conversionRateFormula?.values?.[0]?.[0] || "";
+    const expectedFormula = "=C31/B31";
 
-    Data:
-    Version A Conversion Rate (B30): ${versionARate?.values?.[0]?.[0] || "N/A"}
-    Version A Formulas:
-    C30: ${versionAFormulas?.values?.[0]?.[0] || "N/A"}
-    C31: ${versionAFormulas?.values?.[1]?.[0] || "N/A"}
+    // Normalize formula for comparison
+    const normalizeFormula = (formula) =>
+      formula.replace(/[\s\r\n]/g, "").toLowerCase();
 
-    Version B Conversion Rate (D30): ${versionBRate?.values?.[0]?.[0] || "N/A"}
-    Version B Formulas:
-    E30: ${versionBFormulas?.values?.[0]?.[0] || "N/A"}
-    E31: ${versionBFormulas?.values?.[1]?.[0] || "N/A"}
+    console.log("Raw Actual Formula:", actualFormula);
+    console.log("Normalized Actual Formula:", normalizeFormula(actualFormula));
+    console.log("Normalized Expected Formula:", normalizeFormula(expectedFormula));
 
-    Evaluation Criteria:
-    1. Are the formulas correctly structured? (e.g., no hardcoded values, correct cell references)
-    2. Do the formulas produce correct results?
-    3. Are the final conversion rates calculated correctly?
-    4. Is there proper handling of potential edge cases (e.g., division by zero)?
+    // Ensure exact formula match
+    const formulaCorrect = normalizeFormula(actualFormula) === normalizeFormula(expectedFormula);
+    console.log("Formula Correct?", formulaCorrect);
 
-    Please provide a detailed analysis of the exam performance, including:
-    - Whether each version's conversion rate is correct
-    - Any errors in the formulas or calculations
-    - Suggestions for improvement
+    // Extract conversion values (B31 = total visits, C31 = total conversions)
+    const versionAValues = versionAData?.values?.[0] || [];
+    const totalVisits = Number(versionAValues[0]) || 0;
+    const totalConversions = Number(versionAValues[1]) || 0;
 
-    Response Format:
-    {
-      "isCorrect": boolean,
-      "feedback": string,
-      "formulaAccuracy": number (0-100),
-      "calculationAccuracy": number (0-100),
-      "errors": string[] (if any),
-      "suggestions": string[] (if any),
-      "versionA": { "expected": number, "submitted": number, "isCorrect": boolean },
-      "versionB": { "expected": number, "submitted": number, "isCorrect": boolean }
+    // Expected conversion rate calculation
+    const expectedRate = totalVisits > 0 ? (totalConversions / totalVisits) * 100 : 0;
+    const submittedRate = Number(conversionRateFormula?.values?.[0]?.[0]) || 0;
+
+    // Allow small floating-point differences
+    const calculationCorrect = Math.abs(expectedRate - submittedRate) < 0.01;
+
+    // Overall correctness
+    const isCorrect = formulaCorrect && calculationCorrect;
+    const formulaAccuracy = formulaCorrect ? 100 : 0;
+    const calculationAccuracy = calculationCorrect ? 100 : 0;
+
+    // Errors & suggestions
+    const errors = [];
+    const suggestions = [];
+
+    if (!formulaCorrect) {
+      errors.push("Conversion rate formula is incorrect.");
+      suggestions.push("Check the conversion rate formula in cell C33. It should be =C31/B31.");
     }
-    `
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0,
-    })
-
-    const aiResponse = completion.choices[0].message?.content
-
-    if (!aiResponse) {
-      throw new Error("No response from OpenAI")
+    if (!calculationCorrect) {
+      errors.push("Calculated conversion rate is incorrect.");
+      suggestions.push("Verify your calculation for the conversion rate in cell C33.");
     }
 
-    const result = JSON.parse(aiResponse)
+    // Construct response object
+    const result = {
+      isCorrect,
+      feedback: isCorrect
+        ? "Congratulations! Your formula and calculation for the conversion rate are correct."
+        : "There are some issues with your formula or calculation. Please check the errors and suggestions.",
+      formulaAccuracy,
+      calculationAccuracy,
+      errors,
+      suggestions,
+      versionA: {
+        expected: expectedRate,
+        submitted: submittedRate,
+        isCorrect: calculationCorrect,
+      },
+    };
 
-    return NextResponse.json(result)
+    return NextResponse.json(result);
   } catch (error) {
-    console.error("Error verifying exam:", error)
-    return NextResponse.json({ error: "Error verifying exam" }, { status: 500 })
+    console.error("Error verifying exam:", error);
+    console.error("Error details:", JSON.stringify(error, null, 2));
+    return NextResponse.json({ error: "Error verifying exam" }, { status: 500 });
   }
 }
-
