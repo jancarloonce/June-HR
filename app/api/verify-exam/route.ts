@@ -1,10 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 
 const GOOGLE_SERVICE_ACCOUNT_KEY = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY || "{}");
 const FORCE_EXAM_RESULT = process.env.FORCE_EXAM_RESULT;
 
-export async function POST(req) {
+export async function POST(req: NextRequest) {
   try {
     // Forced test mode for debugging
     if (FORCE_EXAM_RESULT === "pass" || FORCE_EXAM_RESULT === "fail") {
@@ -64,7 +64,7 @@ export async function POST(req) {
     const expectedFormula = "=C31/B31";
 
     // Normalize formula for comparison
-    const normalizeFormula = (formula) =>
+    const normalizeFormula = (formula: string): string => 
       formula.replace(/[\s\r\n]/g, "").toLowerCase();
 
     console.log("Raw Actual Formula:", actualFormula);
