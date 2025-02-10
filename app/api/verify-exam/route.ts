@@ -93,8 +93,8 @@ export async function POST(req: NextRequest) {
     const calculationAccuracy = calculationCorrect ? 100 : 0;
 
     // Errors & suggestions
-    const errors = [];
-    const suggestions = [];
+    const errors: string[] = [];
+    const suggestions: string[] = [];
 
     if (!formulaCorrect) {
       errors.push("Conversion rate formula is incorrect.");
@@ -104,6 +104,10 @@ export async function POST(req: NextRequest) {
       errors.push("Calculated conversion rate is incorrect.");
       suggestions.push("Verify your calculation for the conversion rate in cell C33.");
     }
+
+    // Simulate follow-up question & response (Replace with actual values if available)
+    const followUpQuestion = body?.followUpQuestion || "Can you describe the most effective strategy you used?";
+    const followUpResponse = body?.followUpResponse || "I added targeted ads.";
 
     // Construct response object
     const result = {
@@ -120,6 +124,11 @@ export async function POST(req: NextRequest) {
         submitted: submittedRate,
         isCorrect: calculationCorrect,
       },
+      // ✅ Fix: Store follow-up question and response separately
+      followUp: [
+        { question: "Follow-up Question", answer: followUpQuestion },
+        { question: "Follow-up Response", answer: followUpResponse },
+      ],
     };
 
     return NextResponse.json(result);

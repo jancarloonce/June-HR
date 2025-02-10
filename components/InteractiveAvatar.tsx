@@ -120,25 +120,24 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
 
   const speakGreeting = useCallback(async () => {
     if (!avatarRef.current) {
-      console.log("Avatar not initialized, cannot speak greeting")
-      return
+      console.log("Avatar not initialized, cannot speak greeting");
+      return;
     }
-
-    console.log("Speaking greeting...")
+  
+    console.log("Checking if avatar is ready before speaking...");
+    await new Promise((resolve) => setTimeout(resolve, 300)); // ✅ Small delay to sync with avatar loading
+  
+    console.log("Speaking greeting...");
     try {
-      if (avatarRef.current) {
-        await avatarRef.current.speak({
-          text: "Hello! I'm June from Activate talent, your AI HR interviewer. Are you ready to start the exam?",
-          task_type: TaskType.REPEAT,
-        })
-      } else {
-        console.log("Avatar reference is null, cannot speak")
-      }
-      console.log("Greeting spoken successfully")
+      await avatarRef.current.speak({
+        text: "Hello! I'm June from Activate Talent, your AI HR interviewer. Are you ready to start the exam?",
+        task_type: TaskType.REPEAT,
+      });
+      console.log("Greeting spoken successfully");
     } catch (error) {
-      console.log(`Error in speakGreeting: ${error instanceof Error ? error.message : String(error)}`)
+      console.log(`Error in speakGreeting: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [])
+  }, []);
 
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
@@ -502,71 +501,71 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   )
 
   const startSession = useCallback(async () => {
-    setIsLoading(true)
-    console.log("Starting session...")
-    const token = await fetchAccessToken()
-
+    setIsLoading(true);
+    console.log("Starting session...");
+  
+    const token = await fetchAccessToken();
     if (!token) {
-      setIsLoading(false)
-      console.log("Failed to start session: No HeyGen access token")
-      return
+      setIsLoading(false);
+      console.log("Failed to start session: No HeyGen access token");
+      return;
     }
-
+  
     try {
-      console.log("Initializing StreamingAvatar...")
-      avatarRef.current = new StreamingAvatar({ token })
-
-      console.log("Setting up event listeners...")
+      console.log("Initializing StreamingAvatar...");
+      avatarRef.current = new StreamingAvatar({ token });
+  
+      console.log("Setting up event listeners...");
       const streamReadyPromise = new Promise<void>((resolve) => {
         avatarRef.current!.on(StreamingEvents.STREAM_READY, (event) => {
-          console.log("Stream ready event received")
-          console.log(">>>>> Stream ready:", event.detail)
-          setStream(event.detail)
-          resolve()
-        })
-      })
-
-      avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, (e) => {
-        console.log("Avatar stopped talking", e)
+          console.log("Stream ready event received");
+          console.log(">>>>> Stream ready:", event.detail);
+          setStream(event.detail);
+          resolve();
+        });
+      });
+  
+      avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+        console.log("Avatar stopped talking");
         if (avatarRef.current) {
-          avatarRef.current.closeVoiceChat()
-          console.log("Avatar stopped talking and voice chat closed")
+          avatarRef.current.closeVoiceChat();
+          console.log("Avatar stopped talking and voice chat closed");
+  
           if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-            startVoiceRecognition(handleInitialResponse)
+            startVoiceRecognition(handleInitialResponse);
           } else {
-            pauseVoiceRecognition()
+            pauseVoiceRecognition();
           }
-        } else {
-          console.log("Avatar reference is null, cannot close voice chat")
         }
-      })
-
-      console.log("Creating start avatar...")
+      });
+  
+      console.log("Creating start avatar...");
       await avatarRef.current.createStartAvatar({
         quality: AvatarQuality.Low,
         avatarName: "June_HR_public",
-        voice: {
-          rate: 1,
-        },
+        voice: { rate: 1 },
         language: "en",
         knowledgeBase: "",
-      })
-      console.log("Start avatar created successfully")
-
-      console.log("Starting voice chat...")
-      await avatarRef.current.startVoiceChat()
-      console.log("Voice chat started successfully")
-
-      await streamReadyPromise
-      console.log("Stream is ready, starting greeting...")
-      await speakGreeting()
+      });
+  
+      console.log("Start avatar created successfully");
+  
+      console.log("Waiting for stream to be ready...");
+      await streamReadyPromise; // ✅ Ensures the avatar stream is fully ready
+  
+      console.log("Starting voice chat...");
+      await avatarRef.current.startVoiceChat(); // ✅ Ensures voice chat is ready before speaking
+      console.log("Voice chat started successfully");
+  
+      console.log("Waiting a short delay to stabilize stream...");
+      await new Promise((resolve) => setTimeout(resolve, 500)); // ✅ Allows stream to stabilize
+  
+      console.log("Stream is fully ready, now speaking greeting...");
+      await speakGreeting(); // ✅ Only speaks once everything is ready
     } catch (error) {
-      console.log(`Error during avatar initialization: ${error instanceof Error ? error.message : String(error)}`)
-      if (error instanceof Error && error.stack) {
-        console.log(`Error stack: ${error.stack}`)
-      }
+      console.log(`Error during avatar initialization: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }, [
     fetchAccessToken,
@@ -576,8 +575,8 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     examStage,
     isExamStarted,
     isExamInProgress,
-    pauseVoiceRecognition, // Added pauseVoiceRecognition to dependencies
-  ])
+    pauseVoiceRecognition,
+  ]);
 
   const downloadSummary = useCallback(() => {
     const csvContent = [
