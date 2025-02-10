@@ -198,12 +198,27 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     }
   }, [])
 
+  const finishInterview = useCallback(() => {
+    setExamStage("finished")
+    setIsSummaryAvailable(true)
+    if (avatarRef.current) {
+      avatarRef.current.speak({
+        text: "Thank you for sharing those additional details. We appreciate your time and participation in this interview. The interview is now complete. You can now review the summary or return to the landing page when you're ready.",
+        task_type: TaskType.REPEAT,
+      })
+      avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+        stopVoiceRecognition()
+      })
+    }
+  }, [stopVoiceRecognition])
+
   const handleSuccessfulCampaignResponse = useCallback(
     async (userResponse: string) => {
-      console.log(`Handling successful campaign response: ${userResponse}`)
+      console.log(`Handling successful campaign response. Length: ${userResponse.length}`)
       setSuccessfulCampaign(userResponse)
 
       try {
+        console.log("Generating follow-up question...")
         const response = await fetch("/api/generate-follow-up", {
           method: "POST",
           headers: {
@@ -219,13 +234,16 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
         const result = await response.json()
         setFollowUpQuestion(result.followUpQuestion)
 
+        console.log("Setting exam stage to followUpQuestion")
         setExamStage("followUpQuestion")
         if (avatarRef.current) {
+          console.log("Avatar speaking follow-up question")
           await avatarRef.current.speak({
             text: `Thank you for sharing that experience. ${result.followUpQuestion}`,
             task_type: TaskType.REPEAT,
           })
           avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+            console.log("Avatar finished speaking, starting voice recognition for follow-up")
             startVoiceRecognition(handleFollowUpResponse)
           })
         }
@@ -234,28 +252,18 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
         finishInterview()
       }
     },
-    [startVoiceRecognition],
+    [startVoiceRecognition, finishInterview],
   )
 
-  const handleFollowUpResponse = useCallback((userResponse: string) => {
-    console.log(`Handling follow-up response: ${userResponse}`)
-    setFollowUpResponse(userResponse)
-    finishInterview()
-  }, [])
-
-  const finishInterview = useCallback(() => {
-    setExamStage("finished")
-    setIsSummaryAvailable(true)
-    if (avatarRef.current) {
-      avatarRef.current.speak({
-        text: "Thank you for sharing those additional details. We appreciate your time and participation in this interview. The interview is now complete. You can now review the summary or return to the landing page when you're ready.",
-        task_type: TaskType.REPEAT,
-      })
-      avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-        stopVoiceRecognition()
-      })
-    }
-  }, [stopVoiceRecognition])
+  const handleFollowUpResponse = useCallback(
+    (userResponse: string) => {
+      console.log(`Handling follow-up response. Length: ${userResponse.length}`)
+      setFollowUpResponse(userResponse)
+      setIsSheetOpen(false)
+      finishInterview()
+    },
+    [finishInterview],
+  )
 
   const handleHourlyRateResponse = useCallback(
     async (userResponse: string) => {
@@ -403,28 +411,36 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     setIsExamStarted(true)
     setIsExamInProgress(true)
     try {
-      const response = await fetch("/api/get-sheet-url")
-      if (!response.ok) {
-        throw new Error("Failed to fetch sheet data")
-      }
-      const { url, data } = await response.json()
+      if (!sheetUrl) {
+        const response = await fetch("/api/get-sheet-url")
+        if (!response.ok) {
+          throw new Error("Failed to fetch sheet data")
+        }
+        const { url, data } = await response.json()
 
-      if (url && data) {
-        setSheetUrl(url)
-        setInitialSheetData(data)
+        if (url && data) {
+          setSheetUrl(url)
+          setInitialSheetData(data)
+          setExamStage("inProgress")
+          setIsSheetOpen(true)
+          setIsAvatarCentered(false)
+          setIsVoiceInputActive(false)
+          console.log("Exam started successfully")
+        } else {
+          throw new Error("Missing URL or data in response")
+        }
+      } else {
+        console.log("Sheet URL already exists, skipping fetch")
         setExamStage("inProgress")
         setIsSheetOpen(true)
         setIsAvatarCentered(false)
         setIsVoiceInputActive(false)
-        console.log("Exam started successfully")
-      } else {
-        throw new Error("Missing URL or data in response")
       }
     } catch (error) {
       setExamStage("notStarted")
       console.log(`Failed to start exam: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
-  }, [pauseVoiceRecognition]) // Removed setIsExamInProgress from dependencies
+  }, [pauseVoiceRecognition, sheetUrl])
 
   const handleInitialResponse = useCallback(
     async (userResponse: string) => {
@@ -552,7 +568,16 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
     } finally {
       setIsLoading(false)
     }
-  }, [fetchAccessToken, startVoiceRecognition, handleInitialResponse, speakGreeting, examStage, isExamInProgress]) // Added isExamInProgress to dependencies
+  }, [
+    fetchAccessToken,
+    startVoiceRecognition,
+    handleInitialResponse,
+    speakGreeting,
+    examStage,
+    isExamStarted,
+    isExamInProgress,
+    pauseVoiceRecognition, // Added pauseVoiceRecognition to dependencies
+  ])
 
   const downloadSummary = useCallback(() => {
     const csvContent = [
