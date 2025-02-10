@@ -629,26 +629,28 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
           >
             <Card className="bg-gray-50 shadow-sm">
               <CardContent className="p-4">
-                <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden mb-4">
-                  {isLoading ? (
-                    <SkeletonLoader />
-                  ) : stream ? (
-                    <video
-                      ref={(el) => {
-                        if (el) el.srcObject = stream
-                      }}
-                      autoPlay
-                      playsInline
-                      className="w-full h-full object-cover"
-                    >
-                      <track kind="captions" />
-                    </video>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <p className="text-gray-500">Avatar stream not available</p>
-                    </div>
-                  )}
-                </div>
+              <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden mb-4">
+  {isLoading ? (
+    <SkeletonLoader />
+  ) : stream ? (
+    <video
+      ref={(el) => {
+        if (el && !el.srcObject) { // ✅ Prevents re-assigning video source unnecessarily
+          el.srcObject = stream;
+        }
+      }}
+      autoPlay
+      playsInline
+      className="w-full h-full object-cover"
+    >
+      <track kind="captions" />
+    </video>
+  ) : (
+    <div className="w-full h-full flex items-center justify-center">
+      <p className="text-gray-500">Avatar stream not available</p>
+    </div>
+  )}
+</div>
                 {examStage === "notStarted" && (
                   <Button
                     onClick={startSession}
