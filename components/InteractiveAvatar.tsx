@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import StreamingAvatar, { AvatarQuality, StreamingEvents, TaskType } from "@heygen/streaming-avatar"
+import StreamingAvatar, { AvatarQuality, StreamingEvents, TaskMode, TaskType } from "@heygen/streaming-avatar"
 import { ExamArea } from "./ExamArea/ExamArea"
 import { SkeletonLoader } from "./SkeletonLoader"
 import { CheckIcon, XIcon, Bot, ArrowLeft } from "lucide-react"
@@ -133,7 +133,8 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     try {
       await avatarRef.current.speak({
         text: "Hello! I'm June from Activate Talent, your AI HR interviewer. Are you ready to start the exam?",
-        task_type: TaskType.REPEAT,
+        taskType: TaskType.REPEAT,
+        taskMode: TaskMode.SYNC
       })
       console.log("Greeting spoken successfully")
     } catch (error) {
@@ -205,7 +206,8 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     if (avatarRef.current) {
       avatarRef.current.speak({
         text: "Thank you for sharing those additional details. We appreciate your time and participation in this interview. The interview is now complete. You can now review the summary or return to the landing page when you're ready.",
-        task_type: TaskType.REPEAT,
+        taskType: TaskType.REPEAT,
+        taskMode: TaskMode.SYNC
       })
       avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
         stopVoiceRecognition()
@@ -241,7 +243,8 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           console.log("Avatar speaking follow-up question")
           await avatarRef.current.speak({
             text: `Thank you for sharing that experience. ${result.followUpQuestion}`,
-            task_type: TaskType.REPEAT,
+            taskType: TaskType.REPEAT,
+            taskMode: TaskMode.SYNC
           })
           avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
             console.log("Avatar finished speaking, starting voice recognition for follow-up")
@@ -274,7 +277,8 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       if (avatarRef.current) {
         await avatarRef.current.speak({
           text: `Thank you for sharing your expected hourly rate of ${userResponse}. Now, can you tell me about your most successful campaign?`,
-          task_type: TaskType.REPEAT,
+          taskType: TaskType.REPEAT,
+          taskMode: TaskMode.SYNC
         })
         avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
           console.log("Avatar finished speaking about successful campaign question")
@@ -293,7 +297,8 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         setExamStage("additionalQuestion1")
         await avatarRef.current.speak({
           text: "Now, I have a couple more questions for you. First, what is your expected hourly rate?",
-          task_type: TaskType.REPEAT,
+          taskType: TaskType.REPEAT,
+          taskMode: TaskMode.SYNC
         })
         console.log("Additional question asked successfully")
         avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
@@ -319,7 +324,8 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       if (avatarRef.current) {
         await avatarRef.current.speak({
           text: "I apologize, but there was an error submitting your exam. The sheet URL is not available.",
-          task_type: TaskType.REPEAT,
+          taskType: TaskType.REPEAT,
+          taskMode: TaskMode.SYNC
         })
       }
       setIsSubmitting(false)
@@ -349,11 +355,12 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
       if (avatarRef.current) {
         const speechText = result.isCorrect
-          ? `Congratulations! You have successfully completed the exam. Your formula accuracy was ${result.formulaAccuracy}% and calculation accuracy was ${result.calculationAccuracy}%. ${result.feedback}`
+          ? `You have successfully completed the exam. Your formula accuracy was ${result.formulaAccuracy}% and calculation accuracy was ${result.calculationAccuracy}%. ${result.feedback}`
           : `I'm sorry, but there were some issues with your exam. ${result.feedback}`
         await avatarRef.current.speak({
           text: speechText,
-          task_type: TaskType.REPEAT,
+          taskType: TaskType.REPEAT,
+          taskMode: TaskMode.SYNC
         })
       }
 
@@ -366,7 +373,8 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         // if (avatarRef.current) {
         //   await avatarRef.current.speak({
         //     text: "I'm sorry, but there were some issues with your exam. You can review the feedback and try again if you'd like.",
-        //     task_type: TaskType.REPEAT,
+        //     taskType: TaskType.REPEAT,
+        //     taskMode: TaskMode.SYNC
         //   })
         // }
       }
@@ -376,7 +384,8 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       if (avatarRef.current) {
         await avatarRef.current.speak({
           text: "I apologize, but there was an error submitting your exam. Please try again later.",
-          task_type: TaskType.REPEAT,
+          taskType: TaskType.REPEAT,
+          taskMode: TaskMode.SYNC
         })
       }
     } finally {
@@ -475,7 +484,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           if (avatarRef.current) {
             await avatarRef.current.speak({
               text: "Great! Let's begin the exam. I'm opening the exam sheet now. Good luck!",
-              task_type: TaskType.REPEAT,
+              taskType: TaskType.REPEAT,
             })
           } else {
             console.log("Avatar reference is null, cannot speak")
@@ -486,7 +495,8 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           if (avatarRef.current) {
             await avatarRef.current.speak({
               text: "I understand. Thank you for your time. You can start the interview again when you're ready.",
-              task_type: TaskType.REPEAT,
+              taskType: TaskType.REPEAT,
+              taskMode: TaskMode.SYNC
             })
           } else {
             console.log("Avatar reference is null, cannot speak")
