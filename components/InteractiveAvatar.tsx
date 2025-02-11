@@ -724,7 +724,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                     </video>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <p className="text-gray-500">Avatar stream not available</p>
+                      <p className="text-gray-500">Start by clicking "Begin Interview" button</p>
                     </div>
                   )}
                 </div>
@@ -734,7 +734,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                     disabled={isLoading}
                     className="w-full bg-blue-600 text-white hover:bg-blue-700 text-xl px-8 py-4 rounded-lg shadow-xl transition-all duration-300 font-bold"
                   >
-                    {isLoading ? "Starting..." : "Start Interview"}
+                    {isLoading ? "Starting..." : "Begin Interview"}
                   </Button>
                 )}
               </CardContent>
