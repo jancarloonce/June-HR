@@ -1,64 +1,70 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { CandidateInfoForm } from "./CandidateInfoForm"
 import InteractiveAvatar from "./InteractiveAvatar"
-import {
-  Users,
-  Facebook,
-  Twitter,
-  LinkedinIcon as LinkedIn,
-  Instagram,
-  Brain,
-  Bot,
-  Lightbulb,
-  Target,
-  Shield,
-  Zap,
-  GraduationCap,
-  Rocket,
-} from "lucide-react"
+import { Users, Brain, Bot, Lightbulb, Target, Shield, Zap, GraduationCap } from "lucide-react"
 import React from "react"
 
-export function LandingPage() {
-  const [isInterviewStarted, setIsInterviewStarted] = useState(false)
-  const [currentTime, setCurrentTime] = useState<string>("")
+function FeatureIcon({ icon, text }: { icon: React.ReactNode; text: string }) {
+  return (
+    <div className="flex flex-col items-center p-4 bg-white rounded-xl shadow-[0_10px_20px_rgba(0,0,0,0.1)] hover:shadow-[0_20px_30px_rgba(0,0,0,0.15)] transition-all duration-300 transform hover:-translate-y-1">
+      <div className="text-blue-600 mb-2">
+        {React.cloneElement(icon as React.ReactElement, { className: "h-10 w-10" })}
+      </div>
+      <span className="text-xs text-blue-800 text-center font-medium">{text}</span>
+    </div>
+  )
+}
 
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date()
-      setCurrentTime(now.toLocaleTimeString())
-    }
+function FeatureCard({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
+  return (
+    <Card className="bg-white shadow-md hover:shadow-lg transition-shadow duration-300">
+      <CardContent className="p-6">
+        <div className="flex justify-center mb-4">{icon}</div>
+        <h3 className="text-lg font-semibold mb-2 text-blue-800">{title}</h3>
+        <p className="text-sm text-blue-600">{description}</p>
+      </CardContent>
+    </Card>
+  )
+}
 
-    updateTime() // Set initial time
-    const timer = setInterval(updateTime, 1000) // Update every second
-
-    return () => clearInterval(timer)
-  }, [])
+export const LandingPage = () => {
+  const [currentPage, setCurrentPage] = useState<"landing" | "candidateInfo" | "interactiveAvatar">("landing")
+  const [candidateInfo, setCandidateInfo] = useState<{ name: string; email: string; phone: string } | null>(null)
 
   const startInterview = () => {
-    setIsInterviewStarted(true)
+    setCurrentPage("candidateInfo")
   }
 
   const handleReturnToLanding = () => {
-    setIsInterviewStarted(false)
+    setCurrentPage("landing")
   }
 
-  if (isInterviewStarted) {
+  const handleCandidateInfoSubmit = (info: { name: string; email: string; phone: string }) => {
+    setCandidateInfo(info)
+    setCurrentPage("interactiveAvatar")
+  }
+
+  if (currentPage === "candidateInfo") {
+    return <CandidateInfoForm onBack={handleReturnToLanding} onSubmit={handleCandidateInfoSubmit} />
+  }
+
+  if (currentPage === "interactiveAvatar") {
     return <InteractiveAvatar onReturnToLanding={handleReturnToLanding} />
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 text-blue-900 flex flex-col">
-      <header className="bg-blue-900 shadow-md">
+      <header className="bg-blue-900 shadow-md w-full">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-white flex items-center">
             <Bot className="h-6 w-6 mr-2 text-blue-300" />
             InterviewAI
           </h1>
-          <div className="text-white text-lg font-semibold">{currentTime}</div>
         </div>
       </header>
       <main className="flex-grow flex flex-col items-center justify-center p-4">
@@ -89,19 +95,18 @@ export function LandingPage() {
             >
               <Button
                 onClick={startInterview}
-                className="bg-blue-600 text-white hover:bg-blue-700 text-2xl md:text-3xl px-14 py-7 rounded-md shadow-lg transition-all duration-300 font-bold transform hover:scale-105"
+                className="bg-blue-600 text-white hover:bg-blue-700 text-2xl md:text-3xl px-16 py-8 rounded-md shadow-lg transition-all duration-300 font-bold transform hover:scale-105"
               >
                 Start Interview
-                <Rocket className="ml-3 h-7 w-7" />
               </Button>
             </motion.div>
-            <div className="w-full mb-8">
-              <h2 className="text-xl font-bold mb-4 text-center text-blue-900">Key Features</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <FeatureIcon icon={<Brain />} text="AI-Powered" />
-                <FeatureIcon icon={<Zap />} text="Fast Process" />
-                <FeatureIcon icon={<Shield />} text="Secure" />
-                <FeatureIcon icon={<GraduationCap />} text="Learn & Improve" />
+            <div className="w-full mb-10">
+              <h2 className="text-2xl font-bold mb-6 text-center text-blue-900">Key Features</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <FeatureIcon icon={<Brain className="h-10 w-10" />} text="AI-Powered" />
+                <FeatureIcon icon={<Zap className="h-10 w-10" />} text="Fast Process" />
+                <FeatureIcon icon={<Shield className="h-10 w-10" />} text="Secure" />
+                <FeatureIcon icon={<GraduationCap className="h-10 w-10" />} text="Learn & Improve" />
               </div>
             </div>
             <div className="w-full pt-8 border-t border-blue-200">
@@ -127,60 +132,11 @@ export function LandingPage() {
           </CardContent>
         </Card>
       </main>
-      <footer className="bg-blue-900 text-white py-6">
+      <footer className="bg-blue-900 text-white py-6 w-full">
         <div className="container mx-auto px-4 text-center">
-          <p className="mb-4">&copy; 2025 InterviewAI. All rights reserved.</p>
-          <SocialMediaLinks />
+          <p>&copy; 2025 InterviewAI. All rights reserved.</p>
         </div>
       </footer>
-    </div>
-  )
-}
-
-function FeatureCard({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
-  return (
-    <Card className="bg-blue-50 shadow-md border-blue-200 hover:shadow-lg transition-shadow duration-300">
-      <CardContent className="p-4">
-        <div className="flex justify-center mb-3">{icon}</div>
-        <h3 className="text-lg font-semibold mb-2 text-blue-800">{title}</h3>
-        <p className="text-sm text-blue-600">{description}</p>
-      </CardContent>
-    </Card>
-  )
-}
-
-function FeatureIcon({ icon, text }: { icon: React.ReactNode; text: string }) {
-  return (
-    <div className="flex flex-col items-center">
-      <div className="text-blue-600 mb-1">
-        {React.cloneElement(icon as React.ReactElement, { className: "h-8 w-8" })}
-      </div>
-      <span className="text-xs text-blue-800 text-center">{text}</span>
-    </div>
-  )
-}
-
-function SocialMediaLinks() {
-  const socialLinks = [
-    { icon: <Facebook className="h-6 w-6" />, url: "https://facebook.com/" },
-    { icon: <Twitter className="h-6 w-6" />, url: "https://twitter.com/" },
-    { icon: <LinkedIn className="h-6 w-6" />, url: "https://linkedin.com/" },
-    { icon: <Instagram className="h-6 w-6" />, url: "https://instagram.com/" },
-  ]
-
-  return (
-    <div className="flex justify-center space-x-4">
-      {socialLinks.map((link, index) => (
-        <a
-          key={index}
-          href={link.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-white hover:text-blue-300 transition-colors duration-200"
-        >
-          {link.icon}
-        </a>
-      ))}
     </div>
   )
 }

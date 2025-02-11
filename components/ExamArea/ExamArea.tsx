@@ -1,77 +1,51 @@
-import type React from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
 interface ExamAreaProps {
-  sheetUrl?: string
-  examStage: "loading" | "inProgress" | "verifying" | "completed" | "failed" | "error" | "submitted"
-  onSubmitExam: () => void
   sheetVisible: boolean
   isSheetLoading: boolean
+  examStage: string
+  sheetUrl: string
   initialSheetData: any
   className?: string
+  onSubmitExam: () => void
   isFullScreen: boolean
 }
 
-export const ExamArea: React.FC<ExamAreaProps> = ({
-  sheetUrl,
-  examStage,
-  onSubmitExam,
+export function ExamArea({
   sheetVisible,
   isSheetLoading,
+  examStage,
+  sheetUrl,
   initialSheetData,
   className,
+  onSubmitExam,
   isFullScreen,
-}) => {
+}: ExamAreaProps) {
   return (
-    <Card className={`w-full bg-gray-50 shadow-sm ${className} ${isFullScreen ? "fixed inset-0 z-40" : ""}`}>
-      <CardContent className={`p-4 ${isFullScreen ? "h-full flex flex-col" : ""}`}>
-        {sheetVisible && sheetUrl ? (
-          <>
-            <iframe
-              src={`${sheetUrl}?embedded=true&rm=minimal`}
-              className={`w-full ${isFullScreen ? "flex-grow" : "h-[calc(100vh-8rem)]"} border-none`}
-              title="Exam Sheet"
-              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-            />
+    <Card className={`bg-white shadow-2xl border-4 border-blue-200 ${className} flex flex-col h-full`}>
+      <CardContent className="p-4 flex-grow flex flex-col h-full">
+        {sheetVisible && !isSheetLoading ? (
+          <div className="flex flex-col h-full">
+            <div className="flex-grow mb-4" style={{ height: "calc(100% - 4rem)" }}>
+              <iframe
+                src={`${sheetUrl}?embedded=true`}
+                className={`w-full h-full border-none ${isFullScreen ? "fixed inset-0 z-50" : ""}`}
+                title="Google Sheet"
+              />
+            </div>
             {examStage === "inProgress" && (
-              <div className="mt-2 flex justify-center">
-                <Button onClick={onSubmitExam} className="bg-black hover:bg-gray-800 text-white">
-                  Submit Exam
-                </Button>
-              </div>
+              <Button
+                onClick={onSubmitExam}
+                className="w-full bg-blue-600 text-white hover:bg-blue-700 text-xl px-8 py-4 rounded-lg shadow-xl transition-all duration-300 font-bold transform hover:scale-105"
+              >
+                Submit Exam
+              </Button>
             )}
-            {examStage === "verifying" && (
-              <div className="mt-2 flex justify-center">
-                <p>Verifying your answers...</p>
-              </div>
-            )}
-            {examStage === "completed" && (
-              <div className="mt-2 flex justify-center">
-                <p>Exam completed successfully!</p>
-              </div>
-            )}
-            {examStage === "failed" && (
-              <div className="mt-2 flex justify-center">
-                <p>Exam failed.</p>
-              </div>
-            )}
-            {examStage === "error" && (
-              <div className="mt-2 flex justify-center">
-                <p>An error occurred.</p>
-              </div>
-            )}
-            {examStage === "submitted" && (
-              <div className="mt-2 flex justify-center">
-                <p>Exam submitted.</p>
-              </div>
-            )}
-          </>
+          </div>
         ) : (
-          <div className={`flex items-center justify-center ${isFullScreen ? "h-full" : "h-[calc(100vh-2rem)]"}`}>
-            <p className="text-gray-500">
-              {isSheetLoading ? "Loading exam sheet..." : "Exam sheet will appear here when ready."}
-            </p>
+          <div className="h-full flex items-center justify-center">
+            <p className="text-blue-700">{isSheetLoading ? "Loading exam sheet..." : "Exam sheet not available"}</p>
           </div>
         )}
       </CardContent>
