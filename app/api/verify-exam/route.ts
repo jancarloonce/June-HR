@@ -131,13 +131,13 @@ function generateExamResult(
   }
 
   const followUpQuestion = body?.followUpQuestion || "Can you describe the most effective strategy you used?";
-  const followUpResponse = body?.followUpResponse || "I added targeted ads.";
+  const followUpResponse = body?.followUpResponse || "Thank you for your response.";
 
   return {
     isCorrect,
     feedback: isCorrect
-      ? "Congratulations! Your formula and calculation for the conversion rate are correct."
-      : "There are some issues with your formula or calculation. Please check the errors and suggestions.",
+      ? "You did a great job!."
+      : "There are some issues with your formula or calculation.",
     formulaAccuracy: formulaCorrect ? 100 : 0,
     calculationAccuracy: calculationCorrect ? 100 : 0,
     errors,
