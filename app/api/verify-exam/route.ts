@@ -136,7 +136,7 @@ function generateExamResult(
   return {
     isCorrect,
     feedback: isCorrect
-      ? "You did a great job!."
+      ? "You did a great job!"
       : "There are some issues with your formula or calculation.",
     formulaAccuracy: formulaCorrect ? 100 : 0,
     calculationAccuracy: calculationCorrect ? 100 : 0,
