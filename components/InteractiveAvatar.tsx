@@ -11,6 +11,7 @@ import { motion } from "framer-motion"
 
 interface InteractiveAvatarProps {
   onReturnToLanding: () => void
+  candidateInfo: { name: string; email: string; phone: string } | null
 }
 
 interface ExamResult {
@@ -25,7 +26,7 @@ interface ExamResult {
   versionB?: { expected: number; submitted: number; isCorrect: boolean }
 }
 
-export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvatarProps) {
+export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: InteractiveAvatarProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [examStage, setExamStage] = useState<
@@ -199,7 +200,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   }, [])
 
   const finishInterview = useCallback(() => {
-    setExamStage("finished")
+    setExamStage("summary")
     setIsSummaryAvailable(true)
     if (avatarRef.current) {
       avatarRef.current.speak({
@@ -580,32 +581,67 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   ])
 
   const downloadSummary = useCallback(() => {
-    const csvContent = [
-      ["Question", "Answer"],
-      ["Exam Result", examResult?.isCorrect ? "Passed" : "Failed"],
-      ["Formula Accuracy", `${examResult?.formulaAccuracy}%`],
-      ["Calculation Accuracy", `${examResult?.calculationAccuracy}%`],
-      ["Feedback", examResult?.feedback || ""],
-      ["Expected Hourly Rate", hourlyRate || ""],
-      ["Most Successful Campaign", successfulCampaign || ""],
-      ["Follow-up Question", followUpQuestion || ""],
-      ["Follow-up Response", followUpResponse || ""],
+    const formatDate = (date: Date) => {
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+    }
+
+    // Create CSV content with proper headers and sections
+    const csvRows = [
+      ["Interview Summary Report"],
+      ["Generated on:", formatDate(new Date())],
+      [""], // Empty row for spacing
+      ["CANDIDATE INFORMATION"],
+      ["Full Name:", candidateInfo?.name || "N/A"],
+      ["Email:", candidateInfo?.email || "N/A"],
+      ["Phone:", candidateInfo?.phone || "N/A"],
+      [""], // Empty row for spacing
+      ["EXAM RESULTS"],
+      ["Status:", examResult?.isCorrect ? "PASSED" : "FAILED"],
+      ["Formula Accuracy:", `${examResult?.formulaAccuracy || 0}%`],
+      ["Calculation Accuracy:", `${examResult?.calculationAccuracy || 0}%`],
+      ["Feedback:", examResult?.feedback || "N/A"],
+      [""], // Empty row for spacing
+      ["INTERVIEW RESPONSES"],
+      ["Expected Hourly Rate:", hourlyRate || "N/A"],
+      ["Most Successful Campaign:", successfulCampaign || "N/A"],
+      [""], // Empty row for spacing
+      ["FOLLOW-UP ASSESSMENT"],
+      ["Question:", followUpQuestion || "N/A"],
+      ["Response:", followUpResponse || "N/A"],
     ]
-      .map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(","))
+
+    // Convert rows to CSV format with proper escaping
+    const csvContent = csvRows
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
       .join("\n")
 
+    // Create and trigger download
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
     const link = document.createElement("a")
     if (link.download !== undefined) {
       const url = URL.createObjectURL(blob)
       link.setAttribute("href", url)
-      link.setAttribute("download", "interview_summary.csv")
+      const fileName = `${(candidateInfo?.name || "candidate").toLowerCase().replace(/\s+/g, "_")}_${new Date()
+        .toLocaleDateString("en-US", {
+          month: "2-digit",
+          day: "2-digit",
+          year: "2-digit",
+        })
+        .replace(/\//g, "_")}.csv`
+      link.setAttribute("download", fileName)
       link.style.visibility = "hidden"
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
     }
-  }, [examResult, hourlyRate, successfulCampaign, followUpQuestion, followUpResponse])
+  }, [examResult, hourlyRate, successfulCampaign, followUpQuestion, followUpResponse, candidateInfo])
 
   useEffect(() => {
     const updateTime = () => {
@@ -729,7 +765,8 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
                 examStage === "additionalQuestion1" ||
                 examStage === "additionalQuestion2" ||
                 examStage === "finished" ||
-                examStage === "followUpQuestion") && (
+                examStage === "followUpQuestion" ||
+                examStage === "summary") && (
                 <Card className="w-full h-full bg-white shadow-2xl border-4 border-blue-200 overflow-y-auto">
                   <CardContent className="p-6">
                     <div className="text-center">
@@ -748,7 +785,7 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
                           ? "Congratulations! You have successfully completed the exam."
                           : "There were some issues with your exam. The interviewer will provide feedback."}
                       </p>
-                      {examStage === "finished" && (
+                      {(examStage === "finished" || examStage === "summary") && (
                         <>
                           <p className="text-sm text-blue-700 mt-4">
                             The interview is complete. You can now review the summary or return to the landing page.
@@ -763,22 +800,6 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
                           </div>
                         </>
                       )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-              {examStage === "summary" && summaryText && (
-                <Card className="w-full h-full bg-white shadow-2xl border-4 border-blue-200 overflow-y-auto">
-                  <CardContent className="p-6">
-                    <h2 className="text-2xl font-semibold mb-4 text-blue-900">Interview Summary</h2>
-                    <pre className="whitespace-pre-wrap text-sm text-blue-800">{summaryText}</pre>
-                    <div className="mt-6 space-x-4">
-                      <Button onClick={downloadSummary} className="bg-blue-600 hover:bg-blue-700 text-white">
-                        Download Summary
-                      </Button>
-                      <Button onClick={onReturnToLanding} className="bg-gray-500 hover:bg-gray-600 text-white">
-                        Return to Landing Page
-                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -803,3 +824,4 @@ export default function InteractiveAvatar({ onReturnToLanding }: InteractiveAvat
   )
 }
 
+ 

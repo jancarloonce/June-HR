@@ -54,7 +54,7 @@ export const LandingPage = () => {
   }
 
   if (currentPage === "interactiveAvatar") {
-    return <InteractiveAvatar onReturnToLanding={handleReturnToLanding} />
+    return <InteractiveAvatar onReturnToLanding={handleReturnToLanding} candidateInfo={candidateInfo} />
   }
 
   return (
