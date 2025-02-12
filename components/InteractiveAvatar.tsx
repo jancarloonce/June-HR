@@ -280,7 +280,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       setExamStage("additionalQuestion2")
       if (avatarRef.current) {
         await avatarRef.current.speak({
-          text: `Thank you for sharing your expected hourly rate of ${userResponse}. Now, can you tell me about your most successful campaign?`,
+          text: `Thank you for sharing your expected hourly rate. Now, can you tell me about your most successful campaign?`,
           taskType: TaskType.REPEAT,
           taskMode: TaskMode.SYNC,
         })
