@@ -6,8 +6,12 @@ import { Button } from "@/components/ui/button"
 import StreamingAvatar, { AvatarQuality, StreamingEvents, TaskMode, TaskType } from "@heygen/streaming-avatar"
 import { ExamArea } from "./ExamArea/ExamArea"
 import { SkeletonLoader } from "./SkeletonLoader"
-import { CheckIcon, XIcon, Bot, ArrowLeft } from "lucide-react"
+import { CheckIcon, XIcon, Bot } from "lucide-react"
 import { motion } from "framer-motion"
+import { format } from "date-fns"
+import * as XLSX from "xlsx"
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
 interface InteractiveAvatarProps {
   onReturnToLanding: () => void
@@ -134,7 +138,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       await avatarRef.current.speak({
         text: "Hello! I'm June from Activate Talent, your AI HR interviewer. Are you ready to start the exam?",
         taskType: TaskType.REPEAT,
-        taskMode: TaskMode.SYNC
+        taskMode: TaskMode.SYNC,
       })
       console.log("Greeting spoken successfully")
     } catch (error) {
@@ -205,9 +209,9 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     setIsSummaryAvailable(true)
     if (avatarRef.current) {
       avatarRef.current.speak({
-        text: "Thank you for sharing those additional details. We appreciate your time and participation in this interview. The interview is now complete. You can now review the summary or return to the landing page when you're ready.",
+        text: "Thank you for sharing those additional details. We appreciate your time and participation in this interview. The interview is now complete. You can now review the summary or return to the landing page when you're ready. We will be reaching out within 24 hours.",
         taskType: TaskType.REPEAT,
-        taskMode: TaskMode.SYNC
+        taskMode: TaskMode.SYNC,
       })
       avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
         stopVoiceRecognition()
@@ -244,7 +248,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           await avatarRef.current.speak({
             text: `Thank you for sharing that experience. ${result.followUpQuestion}`,
             taskType: TaskType.REPEAT,
-            taskMode: TaskMode.SYNC
+            taskMode: TaskMode.SYNC,
           })
           avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
             console.log("Avatar finished speaking, starting voice recognition for follow-up")
@@ -278,7 +282,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         await avatarRef.current.speak({
           text: `Thank you for sharing your expected hourly rate of ${userResponse}. Now, can you tell me about your most successful campaign?`,
           taskType: TaskType.REPEAT,
-          taskMode: TaskMode.SYNC
+          taskMode: TaskMode.SYNC,
         })
         avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
           console.log("Avatar finished speaking about successful campaign question")
@@ -298,7 +302,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         await avatarRef.current.speak({
           text: "Now, I have a couple more questions for you. First, what is your expected hourly rate?",
           taskType: TaskType.REPEAT,
-          taskMode: TaskMode.SYNC
+          taskMode: TaskMode.SYNC,
         })
         console.log("Additional question asked successfully")
         avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
@@ -325,7 +329,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         await avatarRef.current.speak({
           text: "I apologize, but there was an error submitting your exam. The sheet URL is not available.",
           taskType: TaskType.REPEAT,
-          taskMode: TaskMode.SYNC
+          taskMode: TaskMode.SYNC,
         })
       }
       setIsSubmitting(false)
@@ -360,7 +364,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         await avatarRef.current.speak({
           text: speechText,
           taskType: TaskType.REPEAT,
-          taskMode: TaskMode.SYNC
+          taskMode: TaskMode.SYNC,
         })
       }
 
@@ -370,13 +374,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         }, 2000)
       } else {
         setExamStage("finished")
-        // if (avatarRef.current) {
-        //   await avatarRef.current.speak({
-        //     text: "I'm sorry, but there were some issues with your exam. You can review the feedback and try again if you'd like.",
-        //     taskType: TaskType.REPEAT,
-        //     taskMode: TaskMode.SYNC
-        //   })
-        // }
       }
     } catch (error) {
       console.log(`Error submitting exam: ${error instanceof Error ? error.message : String(error)}`)
@@ -385,7 +382,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         await avatarRef.current.speak({
           text: "I apologize, but there was an error submitting your exam. Please try again later.",
           taskType: TaskType.REPEAT,
-          taskMode: TaskMode.SYNC
+          taskMode: TaskMode.SYNC,
         })
       }
     } finally {
@@ -496,7 +493,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
             await avatarRef.current.speak({
               text: "I understand. Thank you for your time. You can start the interview again when you're ready.",
               taskType: TaskType.REPEAT,
-              taskMode: TaskMode.SYNC
+              taskMode: TaskMode.SYNC,
             })
           } else {
             console.log("Avatar reference is null, cannot speak")
@@ -590,69 +587,153 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     pauseVoiceRecognition,
   ])
 
-  const downloadSummary = useCallback(() => {
-    const formatDate = (date: Date) => {
-      return date.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
-      })
+
+const downloadSummary = useCallback(async () => {
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Interview Summary");
+
+  // Define Colors
+  const headerColor = "D6EAF8"; // Light Blue for Section Headers
+  const borderColor = "A9C3DB"; // Light Blue for Borders
+  const titleColor = "AED6F1"; // Softer Blue for Title
+  const contentColor = "F2F9FC"; // Very Light Blue for Cell Background
+
+  // Merge and Style Main Headers
+  worksheet.mergeCells("A1:B1");
+  worksheet.mergeCells("A2:B2");
+  worksheet.mergeCells("A3:B3"); // CANDIDATE INFORMATION
+  worksheet.mergeCells("A7:B7"); // EXAM RESULTS
+  worksheet.mergeCells("A12:B12"); // INTERVIEW RESPONSES
+  worksheet.mergeCells("A15:B15"); // FOLLOW-UP ASSESSMENT
+  worksheet.mergeCells("A18:B18"); // END OF REPORT
+
+  const titleStyle = {
+    alignment: { horizontal: "center", vertical: "middle" },
+    font: { bold: true, color: { argb: "1F4E79" }, size: 14 },
+    fill: { type: "pattern", pattern: "solid", fgColor: { argb: titleColor } },
+  };
+
+  const sectionStyle = {
+    alignment: { horizontal: "center", vertical: "middle" },
+    font: { bold: true, size: 12, color: { argb: "000000" } },
+    fill: { type: "pattern", pattern: "solid", fgColor: { argb: headerColor } },
+  };
+
+  worksheet.getCell("A1").value = "Interview Summary Report";
+  Object.assign(worksheet.getCell("A1"), titleStyle);
+
+  worksheet.getCell("A2").value = `Generated on: ${formatDate(new Date())}`;
+  Object.assign(worksheet.getCell("A2"), titleStyle);
+
+  worksheet.getCell("A3").value = "CANDIDATE INFORMATION";
+  Object.assign(worksheet.getCell("A3"), sectionStyle);
+
+  // Move Full Name, Email, and Phone Number to A4, A5, A6
+  worksheet.getCell("A4").value = "Full Name:";
+  worksheet.getCell("B4").value = candidateInfo?.name || "N/A";
+
+  worksheet.getCell("A5").value = "Email:";
+  worksheet.getCell("B5").value = candidateInfo?.email || "N/A";
+
+  worksheet.getCell("A6").value = "Phone:";
+  worksheet.getCell("B6").value = candidateInfo?.phone || "N/A";
+
+  // Section Headers
+  worksheet.getCell("A7").value = "EXAM RESULTS";
+  Object.assign(worksheet.getCell("A7"), sectionStyle);
+
+  // Move Status, Formula Accuracy, Calculation Accuracy, and Feedback to A8 - A11
+  worksheet.getCell("A8").value = "Status:";
+  worksheet.getCell("B8").value = examResult?.isCorrect ? "PASSED" : "FAILED";
+
+  worksheet.getCell("A9").value = "Formula Accuracy:";
+  worksheet.getCell("B9").value = `${examResult?.formulaAccuracy || 0}%`;
+
+  worksheet.getCell("A10").value = "Calculation Accuracy:";
+  worksheet.getCell("B10").value = `${examResult?.calculationAccuracy || 0}%`;
+
+  // worksheet.getCell("A11").value = "Feedback:";
+  // worksheet.getCell("B11").value = examResult?.feedback || "N/A";
+
+  worksheet.getCell("A12").value = "INTERVIEW RESPONSES";
+  Object.assign(worksheet.getCell("A12"), sectionStyle);
+
+  // Move Expected Hourly Rate and Most Successful Campaign to A13 and A14
+  worksheet.getCell("A13").value = "Expected Hourly Rate:";
+  worksheet.getCell("B13").value = hourlyRate || "N/A";
+
+  worksheet.getCell("A14").value = "Most Successful Campaign:";
+  worksheet.getCell("B14").value = successfulCampaign || "N/A";
+
+  worksheet.getCell("A15").value = "FOLLOW-UP ASSESSMENT";
+  Object.assign(worksheet.getCell("A15"), sectionStyle);
+
+  // Move Question and Response to A16 and A17
+  worksheet.getCell("A16").value = "Question:";
+  worksheet.getCell("B16").value = followUpQuestion || "N/A";
+
+  worksheet.getCell("A17").value = "Response:";
+  worksheet.getCell("B17").value = followUpResponse || "N/A";
+
+  worksheet.getCell("A18").value = "End of Report";
+  Object.assign(worksheet.getCell("A18"), sectionStyle);
+
+  // Adjust Column Widths
+  worksheet.columns = [
+    { key: "col1", width: 40 },
+    { key: "col2", width: 50 },
+  ];
+
+  // Apply Borders, Background Colors, and Text Wrapping
+  worksheet.eachRow((row, rowNumber) => {
+    row.eachCell((cell, colNumber) => {
+      cell.border = {
+        top: { style: "thin", color: { argb: borderColor } },
+        left: { style: "thin", color: { argb: borderColor } },
+        bottom: { style: "thin", color: { argb: borderColor } },
+        right: { style: "thin", color: { argb: borderColor } },
+      };
+
+      // Wrap text in B16 (Question) and B17 (Response)
+      if ((rowNumber === 16 || rowNumber === 17) && colNumber === 2) {
+        cell.alignment = { wrapText: true };
+      }
+    });
+
+    // Slightly increase row height for better readability
+    if (rowNumber === 16 || rowNumber === 17) {
+      row.height = 30; // Give more space for wrapped text
+    } else {
+      row.height = 20;
     }
+  });
 
-    // Create CSV content with proper headers and sections
-    const csvRows = [
-      ["Interview Summary Report"],
-      ["Generated on:", formatDate(new Date())],
-      [""], // Empty row for spacing
-      ["CANDIDATE INFORMATION"],
-      ["Full Name:", candidateInfo?.name || "N/A"],
-      ["Email:", candidateInfo?.email || "N/A"],
-      ["Phone:", candidateInfo?.phone || "N/A"],
-      [""], // Empty row for spacing
-      ["EXAM RESULTS"],
-      ["Status:", examResult?.isCorrect ? "PASSED" : "FAILED"],
-      ["Formula Accuracy:", `${examResult?.formulaAccuracy || 0}%`],
-      ["Calculation Accuracy:", `${examResult?.calculationAccuracy || 0}%`],
-      ["Feedback:", examResult?.feedback || "N/A"],
-      [""], // Empty row for spacing
-      ["INTERVIEW RESPONSES"],
-      ["Expected Hourly Rate:", hourlyRate || "N/A"],
-      ["Most Successful Campaign:", successfulCampaign || "N/A"],
-      [""], // Empty row for spacing
-      ["FOLLOW-UP ASSESSMENT"],
-      ["Question:", followUpQuestion || "N/A"],
-      ["Response:", followUpResponse || "N/A"],
-    ]
+  // Generate and save Excel file
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 
-    // Convert rows to CSV format with proper escaping
-    const csvContent = csvRows
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n")
+  const fileName = `${(candidateInfo?.name || "candidate").toLowerCase().replace(/\s+/g, "_")}_${new Date()
+    .toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })
+    .replace(/\//g, "_")}.xlsx`;
 
-    // Create and trigger download
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const link = document.createElement("a")
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob)
-      link.setAttribute("href", url)
-      const fileName = `${(candidateInfo?.name || "candidate").toLowerCase().replace(/\s+/g, "_")}_${new Date()
-        .toLocaleDateString("en-US", {
-          month: "2-digit",
-          day: "2-digit",
-          year: "2-digit",
-        })
-        .replace(/\//g, "_")}.csv`
-      link.setAttribute("download", fileName)
-      link.style.visibility = "hidden"
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-    }
-  }, [examResult, hourlyRate, successfulCampaign, followUpQuestion, followUpResponse, candidateInfo])
+  saveAs(blob, fileName);
+}, [examResult, hourlyRate, successfulCampaign, followUpQuestion, followUpResponse, candidateInfo]);
 
+
+  
+  
+  
   useEffect(() => {
     const updateTime = () => {
       const now = new Date()
@@ -823,15 +904,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           <p>&copy; 2025 InterviewAI. All rights reserved.</p>
         </div>
       </footer>
-      {/* <Button
-        onClick={onReturnToLanding}
-        className="fixed bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg"
-      >
-        <ArrowLeft className="h-6 w-6" />
-        <span className="ml-2">Back</span>
-      </Button> */}
     </div>
   )
 }
 
- 
