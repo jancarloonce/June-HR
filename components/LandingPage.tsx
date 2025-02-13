@@ -37,8 +37,15 @@ export const LandingPage = () => {
   const [candidateInfo, setCandidateInfo] = useState<{ name: string; email: string; phone: string } | null>(null)
 
   const startInterview = () => {
-    setCurrentPage("candidateInfo")
-  }
+    // Preinitialize the AudioContext on user gesture.
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    const audioContext = new AudioContext();
+    audioContext.resume().then(() => {
+      console.log("AudioContext resumed and warmed up");
+      // Now transition to candidate info page.
+      setCurrentPage("candidateInfo");
+    });
+  };
 
   const handleReturnToLanding = () => {
     setCurrentPage("landing")
