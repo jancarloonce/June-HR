@@ -8,10 +8,9 @@ import { ExamArea } from "./ExamArea/ExamArea"
 import { SkeletonLoader } from "./SkeletonLoader"
 import { CheckIcon, XIcon, Bot } from "lucide-react"
 import { motion } from "framer-motion"
-import { format } from "date-fns"
-import * as XLSX from "xlsx"
-import ExcelJS from "exceljs";
-import { saveAs } from "file-saver";
+import ExcelJS from "exceljs"
+import { saveAs } from "file-saver"
+import LoadingCountdown from "./LoadingCountdown"
 
 interface InteractiveAvatarProps {
   onReturnToLanding: () => void
@@ -68,6 +67,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   const [followUpQuestion, setFollowUpQuestion] = useState<string | null>(null)
   const [followUpResponse, setFollowUpResponse] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState<string>("")
+  const [isInitializing, setIsInitializing] = useState(false)
 
   const fetchAccessToken = useCallback(async () => {
     try {
@@ -135,6 +135,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
     console.log("Speaking greeting...")
     try {
+      avatarRef.current!.closeVoiceChat()
       await avatarRef.current.speak({
         text: "Hello! I'm June from Activate Talent, your AI HR interviewer. Are you ready to start the exam?",
         taskType: TaskType.REPEAT,
@@ -511,11 +512,13 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
   const startSession = useCallback(async () => {
     setIsLoading(true)
+    setIsInitializing(true)
     console.log("Starting session...")
 
     const token = await fetchAccessToken()
     if (!token) {
       setIsLoading(false)
+      setIsInitializing(false)
       console.log("Failed to start session: No HeyGen access token")
       return
     }
@@ -530,6 +533,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           console.log("Stream ready event received")
           console.log(">>>>> Stream ready:", event.detail)
           setStream(event.detail)
+
           resolve()
         })
       })
@@ -575,6 +579,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       console.log(`Error during avatar initialization: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setIsLoading(false)
+      setIsInitializing(false)
     }
   }, [
     fetchAccessToken,
@@ -587,153 +592,177 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     pauseVoiceRecognition,
   ])
 
-
-const downloadSummary = useCallback(async () => {
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
-  };
-
-  const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet("Interview Summary");
-
-  // Define Colors
-  const headerColor = "D6EAF8"; // Light Blue for Section Headers
-  const borderColor = "A9C3DB"; // Light Blue for Borders
-  const titleColor = "AED6F1"; // Softer Blue for Title
-  const contentColor = "F2F9FC"; // Very Light Blue for Cell Background
-
-  // Merge and Style Main Headers
-  worksheet.mergeCells("A1:B1");
-  worksheet.mergeCells("A2:B2");
-  worksheet.mergeCells("A3:B3"); // CANDIDATE INFORMATION
-  worksheet.mergeCells("A7:B7"); // EXAM RESULTS
-  worksheet.mergeCells("A12:B12"); // INTERVIEW RESPONSES
-  worksheet.mergeCells("A15:B15"); // FOLLOW-UP ASSESSMENT
-  worksheet.mergeCells("A18:B18"); // END OF REPORT
-
-  const titleStyle = {
-    alignment: { horizontal: "center", vertical: "middle" },
-    font: { bold: true, color: { argb: "1F4E79" }, size: 14 },
-    fill: { type: "pattern", pattern: "solid", fgColor: { argb: titleColor } },
-  };
-
-  const sectionStyle = {
-    alignment: { horizontal: "center", vertical: "middle" },
-    font: { bold: true, size: 12, color: { argb: "000000" } },
-    fill: { type: "pattern", pattern: "solid", fgColor: { argb: headerColor } },
-  };
-
-  worksheet.getCell("A1").value = "Interview Summary Report";
-  Object.assign(worksheet.getCell("A1"), titleStyle);
-
-  worksheet.getCell("A2").value = `Generated on: ${formatDate(new Date())}`;
-  Object.assign(worksheet.getCell("A2"), titleStyle);
-
-  worksheet.getCell("A3").value = "CANDIDATE INFORMATION";
-  Object.assign(worksheet.getCell("A3"), sectionStyle);
-
-  // Move Full Name, Email, and Phone Number to A4, A5, A6
-  worksheet.getCell("A4").value = "Full Name:";
-  worksheet.getCell("B4").value = candidateInfo?.name || "N/A";
-
-  worksheet.getCell("A5").value = "Email:";
-  worksheet.getCell("B5").value = candidateInfo?.email || "N/A";
-
-  worksheet.getCell("A6").value = "Phone:";
-  worksheet.getCell("B6").value = candidateInfo?.phone || "N/A";
-
-  // Section Headers
-  worksheet.getCell("A7").value = "EXAM RESULTS";
-  Object.assign(worksheet.getCell("A7"), sectionStyle);
-
-  // Move Status, Formula Accuracy, Calculation Accuracy, and Feedback to A8 - A11
-  worksheet.getCell("A8").value = "Status:";
-  worksheet.getCell("B8").value = examResult?.isCorrect ? "PASSED" : "FAILED";
-
-  worksheet.getCell("A9").value = "Formula Accuracy:";
-  worksheet.getCell("B9").value = `${examResult?.formulaAccuracy || 0}%`;
-
-  worksheet.getCell("A10").value = "Calculation Accuracy:";
-  worksheet.getCell("B10").value = `${examResult?.calculationAccuracy || 0}%`;
-
-  // worksheet.getCell("A11").value = "Feedback:";
-  // worksheet.getCell("B11").value = examResult?.feedback || "N/A";
-
-  worksheet.getCell("A12").value = "INTERVIEW RESPONSES";
-  Object.assign(worksheet.getCell("A12"), sectionStyle);
-
-  // Move Expected Hourly Rate and Most Successful Campaign to A13 and A14
-  worksheet.getCell("A13").value = "Expected Hourly Rate:";
-  worksheet.getCell("B13").value = hourlyRate || "N/A";
-
-  worksheet.getCell("A14").value = "Most Successful Campaign:";
-  worksheet.getCell("B14").value = successfulCampaign || "N/A";
-
-  worksheet.getCell("A15").value = "FOLLOW-UP ASSESSMENT";
-  Object.assign(worksheet.getCell("A15"), sectionStyle);
-
-  // Move Question and Response to A16 and A17
-  worksheet.getCell("A16").value = "Question:";
-  worksheet.getCell("B16").value = followUpQuestion || "N/A";
-
-  worksheet.getCell("A17").value = "Response:";
-  worksheet.getCell("B17").value = followUpResponse || "N/A";
-
-  worksheet.getCell("A18").value = "End of Report";
-  Object.assign(worksheet.getCell("A18"), sectionStyle);
-
-  // Adjust Column Widths
-  worksheet.columns = [
-    { key: "col1", width: 40 },
-    { key: "col2", width: 50 },
-  ];
-
-  // Apply Borders, Background Colors, and Text Wrapping
-  worksheet.eachRow((row, rowNumber) => {
-    row.eachCell((cell, colNumber) => {
-      cell.border = {
-        top: { style: "thin", color: { argb: borderColor } },
-        left: { style: "thin", color: { argb: borderColor } },
-        bottom: { style: "thin", color: { argb: borderColor } },
-        right: { style: "thin", color: { argb: borderColor } },
-      };
-
-      // Wrap text in B16 (Question) and B17 (Response)
-      if ((rowNumber === 16 || rowNumber === 17) && colNumber === 2) {
-        cell.alignment = { wrapText: true };
-      }
-    });
-
-    // Slightly increase row height for better readability
-    if (rowNumber === 16 || rowNumber === 17) {
-      row.height = 30; // Give more space for wrapped text
-    } else {
-      row.height = 20;
+  const downloadSummary = useCallback(async () => {
+    const formatDate = (date: Date) => {
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
     }
-  });
 
-  // Generate and save Excel file
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet("Interview Summary")
 
-  const fileName = `${(candidateInfo?.name || "candidate").toLowerCase().replace(/\s+/g, "_")}_${new Date()
-    .toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })
-    .replace(/\//g, "_")}.xlsx`;
+    // Define Colors
+    const headerColor = "D6EAF8" // Light Blue for Section Headers
+    const titleColor = "AED6F1" // Softer Blue for Title
 
-  saveAs(blob, fileName);
-}, [examResult, hourlyRate, successfulCampaign, followUpQuestion, followUpResponse, candidateInfo]);
+    // Merge and Style Main Headers
+    worksheet.mergeCells("A1:B1")
+    worksheet.mergeCells("A2:B2")
+    worksheet.mergeCells("A3:B3") // CANDIDATE INFORMATION
+    worksheet.mergeCells("A7:B7") // EXAM RESULTS
+    worksheet.mergeCells("A11:B11")
+    worksheet.mergeCells("A14:B14")
+    worksheet.mergeCells("A17:B17")
 
+    const titleStyle = {
+      alignment: { horizontal: "center", vertical: "middle" },
+      font: { bold: true, color: { argb: "000000" }, size: 14 },
+      fill: { type: "pattern", pattern: "solid", fgColor: { argb: titleColor } },
+    }
 
-  
-  
-  
+    const sectionStyle = {
+      alignment: { horizontal: "center", vertical: "middle" },
+      font: { bold: true, size: 12, color: { argb: "000000" } },
+      fill: { type: "pattern", pattern: "solid", fgColor: { argb: headerColor } },
+    }
+
+    const borderStyle: Partial<ExcelJS.Borders> = {
+      top: { style: "thin" as const, color: { argb: "ADD8E6" } },
+      left: { style: "thin" as const, color: { argb: "ADD8E6" } },
+      bottom: { style: "thin" as const, color: { argb: "ADD8E6" } },
+      right: { style: "thin" as const, color: { argb: "ADD8E6" } },
+    }
+
+    worksheet.getCell("A1").value = "Interview Summary Report"
+    worksheet.getCell("A1").font = { name: "Georgia", bold: true, italic: true, size: 20, color: { argb: "000000" } }
+    worksheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" }
+    worksheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: titleColor } }
+
+    worksheet.getCell("A2").value = `Generated on: ${formatDate(new Date())}`
+    Object.assign(worksheet.getCell("A2"), titleStyle)
+
+    worksheet.getCell("A3").value = "CANDIDATE INFORMATION"
+    Object.assign(worksheet.getCell("A3"), sectionStyle)
+
+    worksheet.getCell("A4").value = "Full Name:"
+    worksheet.getCell("B4").value = candidateInfo?.name || "N/A"
+
+    worksheet.getCell("A5").value = "Email:"
+    worksheet.getCell("B5").value = candidateInfo?.email || "N/A"
+
+    worksheet.getCell("A6").value = "Phone:"
+    worksheet.getCell("B6").value = candidateInfo?.phone || "N/A"
+
+    worksheet.getCell("A7").value = "EXAM RESULTS"
+    Object.assign(worksheet.getCell("A7"), sectionStyle)
+
+    worksheet.getCell("A8").value = "Status:"
+    worksheet.getCell("B8").value = examResult?.isCorrect ? "PASSED" : "FAILED"
+
+    worksheet.getCell("A9").value = "Formula Accuracy:"
+    worksheet.getCell("B9").value = `${examResult?.formulaAccuracy || 0}%`
+
+    worksheet.getCell("A10").value = "Calculation Accuracy:"
+    worksheet.getCell("B10").value = `${examResult?.calculationAccuracy || 0}%`
+
+    worksheet.getCell("A11").value = "INTERVIEW RESPONSES"
+    Object.assign(worksheet.getCell("A11"), sectionStyle)
+
+    worksheet.getCell("A12").value = "Expected Hourly Rate:"
+    worksheet.getCell("B12").value = hourlyRate || "N/A"
+
+    worksheet.getCell("A13").value = "Most Successful Campaign:"
+    worksheet.getCell("B13").value = successfulCampaign || "N/A"
+
+    worksheet.getCell("A14").value = "FOLLOW-UP ASSESSMENT"
+    Object.assign(worksheet.getCell("A14"), sectionStyle)
+
+    worksheet.getCell("A15").value = "Question:"
+    worksheet.getCell("B15").value = followUpQuestion || "N/A"
+
+    worksheet.getCell("A16").value = "Response:"
+    worksheet.getCell("B16").value = followUpResponse || "N/A"
+
+    worksheet.getCell("A17").value = "End of Report"
+    Object.assign(worksheet.getCell("A17"), sectionStyle)
+
+    worksheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.border = borderStyle
+      })
+    })
+
+    // ✅ Bold the specified cells
+    ;["A4", "A5", "A6", "A8", "A9", "A10", "A12", "A13", "A15", "A16"].forEach((cellRef) => {
+      worksheet.getCell(cellRef).font = { bold: true }
+    })
+
+    // ✅ Align Middle-Left for the Specified Cells
+    ;[
+      "A4",
+      "B4",
+      "A5",
+      "B5",
+      "A6",
+      "B6",
+      "A8",
+      "B8",
+      "A9",
+      "B9",
+      "A10",
+      "B10",
+      "A12",
+      "B12",
+      "A13",
+      "B13",
+      "A15",
+      "B15",
+      "A16",
+      "B16",
+    ].forEach((cellRef) => {
+      worksheet.getCell(cellRef).alignment = { vertical: "middle", horizontal: "left" }
+    })
+
+    // ✅ Keep Text Wrapping + Middle-Left Alignment for B13, B15, and B16
+    ;["B13", "B15", "B16"].forEach((cellRef) => {
+      worksheet.getCell(cellRef).alignment = { wrapText: true, vertical: "middle", horizontal: "left" }
+    })
+
+    // ✅ Set Column Widths
+    worksheet.columns = [
+      { key: "colA", width: 30 }, // Column A width = 30
+      { key: "colB", width: 50 }, // Column B width = 50
+    ]
+
+    // ✅ Set Row Height to 30 for Rows 1-12, 14, and 17
+    ;[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 17].forEach((rowNum) => {
+      worksheet.getRow(rowNum).height = 30
+    })
+
+    // ✅ Set Row Height to 70 for Rows 13, 15, and 16
+    ;[13, 15, 16].forEach((rowNum) => {
+      worksheet.getRow(rowNum).height = 70
+    })
+
+    // ✅ Remove Row 18
+    worksheet.spliceRows(18, 1)
+
+    // Generate and save Excel file
+    const buffer = await workbook.xlsx.writeBuffer()
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
+
+    const fileName = `${(candidateInfo?.name || "candidate").toLowerCase().replace(/\s+/g, "_")}_${new Date()
+      .toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })
+      .replace(/\//g, "_")}.xlsx`
+    saveAs(blob, fileName)
+  }, [examResult, hourlyRate, successfulCampaign, followUpQuestion, followUpResponse, candidateInfo])
+
   useEffect(() => {
     const updateTime = () => {
       const now = new Date()
@@ -789,7 +818,17 @@ const downloadSummary = useCallback(async () => {
               <CardContent className="p-4">
                 <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden mb-4">
                   {isLoading ? (
-                    <SkeletonLoader />
+                    isInitializing ? (
+                      <LoadingCountdown
+                        duration={10}
+                        onComplete={() => {
+                          // This function will be called when the countdown is complete
+                          // You can add any additional logic here if needed
+                        }}
+                      />
+                    ) : (
+                      <SkeletonLoader />
+                    )
                   ) : stream ? (
                     <video
                       ref={(el) => {
