@@ -70,6 +70,10 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   const [isInitializing, setIsInitializing] = useState(false)
   // Use a ref to track if the greeting has already been spoken.
   const hasGreetedRef = useRef(false)
+  const isGreetingRef = useRef(isGreeting);
+useEffect(() => {
+  isGreetingRef.current = isGreeting;
+}, [isGreeting]);
 
   const sheetOpenRef = useRef(isSheetOpen);
 useEffect(() => {
@@ -133,34 +137,41 @@ useEffect(() => {
 
   const speakGreeting = useCallback(async () => {
     if (!avatarRef.current) {
-      console.log("Avatar not initialized, cannot speak greeting")
-      return
+      console.log("Avatar not initialized, cannot speak greeting");
+      return;
     }
-
-    // If we've already greeted, skip
     if (hasGreetedRef.current) {
-      console.log("Greeting already spoken, skipping.")
-      return
+      console.log("Greeting already spoken, skipping.");
+      return;
     }
-
-    console.log("Checking if avatar is ready before speaking...")
-    await new Promise((resolve) => setTimeout(resolve, 300))
-
-    console.log("Speaking greeting...")
+    
+    console.log("Checking if avatar is ready before speaking...");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    
+    console.log("Speaking greeting...");
     try {
-      avatarRef.current.closeVoiceChat()
+      avatarRef.current.closeVoiceChat();
+      // Call speak and wait for its promise to resolve
       await avatarRef.current.speak({
         text: "Hello! I'm June from Activate Talent, your AI HR interviewer. Are you ready to start the exam?",
         taskType: TaskType.REPEAT,
         taskMode: TaskMode.SYNC,
-      })
-      console.log("Greeting spoken successfully")
-      hasGreetedRef.current = true
+      });
+      console.log("Waiting for avatar to finish speaking (AVATAR_STOP_TALKING event)...");
+      // Wait for the AVATAR_STOP_TALKING event to signal that speaking is truly done
+      await new Promise<void>((resolve) => {
+        avatarRef.current?.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+          console.log("Avatar finished speaking (event received).");
+          resolve();
+        });
+      });
+      console.log("Greeting spoken successfully");
+      hasGreetedRef.current = true;
     } catch (error) {
-      console.log(`Error in speakGreeting: ${error instanceof Error ? error.message : String(error)}`)
+      console.log(`Error in speakGreeting: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [])
-
+  }, []);
+  
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
       if ("webkitSpeechRecognition" in window) {
@@ -177,6 +188,11 @@ useEffect(() => {
           // If the sheet is open, ignore any voice input.
           if (sheetOpenRef.current) {
             console.log("Sheet is open, ignoring voice input.");
+            return;
+          }
+          // NEW: If greeting is in progress, ignore any voice input.
+          if (isGreetingRef.current) {
+            console.log("Greeting in progress, ignoring voice input.");
             return;
           }
           const last = event.results.length - 1;
@@ -208,6 +224,7 @@ useEffect(() => {
     },
     [examStage]
   );
+  
   
   const stopVoiceRecognition = useCallback(() => {
     if (recognitionRef.current) {
@@ -598,13 +615,13 @@ useEffect(() => {
       console.log("Voice chat started successfully");
   
       console.log("Waiting a short delay to stabilize stream...");
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 1200));
   
-      console.log("Stream is fully ready, now speaking greeting...");
-      setIsGreeting(true);
+      // console.log("Stream is fully ready, now speaking greeting...");
+      // setIsGreeting(true);
       // avatarRef.current.closeVoiceChat();
-      await speakGreeting();
-      setIsGreeting(false);
+      // await speakGreeting();
+      // setIsGreeting(false);
   
       // Only start voice recognition after the greeting is complete.
       if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
@@ -870,18 +887,32 @@ useEffect(() => {
                       <SkeletonLoader />
                     )
                   ) : stream ? (
-                    <video
-                      ref={(el) => {
-                        if (el && !el.srcObject) {
-                          el.srcObject = stream
-                        }
-                      }}
-                      autoPlay
-                      playsInline
-                      className="w-full h-full object-cover"
-                    >
-                      <track kind="captions" />
-                    </video>
+<video
+  ref={(el) => {
+    if (el && !el.srcObject) {
+      el.srcObject = stream;
+      el.onloadedmetadata = () => {
+        console.log("Video metadata loaded. Avatar should be visible now.");
+        // Once the video is loaded, start the greeting if it hasn't already been spoken.
+        if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
+          // Ensure voice recognition is off during greeting.
+          stopVoiceRecognition();
+          setIsGreeting(true);
+          speakGreeting().then(() => {
+            setIsGreeting(false);
+            // Now that greeting is done, start voice recognition.
+            startVoiceRecognition(handleInitialResponse);
+          });
+        }
+      };
+    }
+  }}
+  autoPlay
+  playsInline
+  className="w-full h-full object-cover"
+>
+  <track kind="captions" />
+</video>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <p className="text-gray-500">Start by clicking "Begin Interview" button</p>
