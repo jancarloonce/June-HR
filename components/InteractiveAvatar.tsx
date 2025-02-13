@@ -820,7 +820,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                   {isLoading ? (
                     isInitializing ? (
                       <LoadingCountdown
-                        duration={10}
+                        duration={5}
                         onComplete={() => {
                           // This function will be called when the countdown is complete
                           // You can add any additional logic here if needed
