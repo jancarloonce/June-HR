@@ -8,8 +8,6 @@ import { ExamArea } from "./ExamArea/ExamArea"
 import { SkeletonLoader } from "./SkeletonLoader"
 import { CheckIcon, XIcon, Bot } from "lucide-react"
 import { motion } from "framer-motion"
-import ExcelJS from "exceljs"
-import { saveAs } from "file-saver"
 import LoadingCountdown from "./LoadingCountdown"
 
 interface InteractiveAvatarProps {
@@ -63,22 +61,22 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   const recognitionRef = useRef<any>(null)
   const [initialSheetData, setInitialSheetData] = useState<any>(null)
   const [examResult, setExamResult] = useState<ExamResult | null>(null)
-  const [isGreeting, setIsGreeting] = useState(false);
+  const [isGreeting, setIsGreeting] = useState(false)
   const [followUpQuestion, setFollowUpQuestion] = useState<string | null>(null)
   const [followUpResponse, setFollowUpResponse] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState<string>("")
   const [isInitializing, setIsInitializing] = useState(false)
   // Use a ref to track if the greeting has already been spoken.
   const hasGreetedRef = useRef(false)
-  const isGreetingRef = useRef(isGreeting);
-useEffect(() => {
-  isGreetingRef.current = isGreeting;
-}, [isGreeting]);
+  const isGreetingRef = useRef(isGreeting)
+  useEffect(() => {
+    isGreetingRef.current = isGreeting
+  }, [isGreeting])
 
-  const sheetOpenRef = useRef(isSheetOpen);
-useEffect(() => {
-  sheetOpenRef.current = isSheetOpen;
-}, [isSheetOpen]);
+  const sheetOpenRef = useRef(isSheetOpen)
+  useEffect(() => {
+    sheetOpenRef.current = isSheetOpen
+  }, [isSheetOpen])
 
   const fetchAccessToken = useCallback(async () => {
     try {
@@ -137,95 +135,94 @@ useEffect(() => {
 
   const speakGreeting = useCallback(async () => {
     if (!avatarRef.current) {
-      console.log("Avatar not initialized, cannot speak greeting");
-      return;
+      console.log("Avatar not initialized, cannot speak greeting")
+      return
     }
     if (hasGreetedRef.current) {
-      console.log("Greeting already spoken, skipping.");
-      return;
+      console.log("Greeting already spoken, skipping.")
+      return
     }
-    
-    console.log("Checking if avatar is ready before speaking...");
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    
-    console.log("Speaking greeting...");
+
+    console.log("Checking if avatar is ready before speaking...")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    console.log("Speaking greeting...")
     try {
-      avatarRef.current.closeVoiceChat();
+      avatarRef.current.closeVoiceChat()
       // Call speak and wait for its promise to resolve
       await avatarRef.current.speak({
         text: "Hello! I'm June from Activate Talent, your AI HR interviewer. Are you ready to start the exam?",
         taskType: TaskType.REPEAT,
         taskMode: TaskMode.SYNC,
-      });
-      console.log("Waiting for avatar to finish speaking (AVATAR_STOP_TALKING event)...");
+      })
+      console.log("Waiting for avatar to finish speaking (AVATAR_STOP_TALKING event)...")
       // Wait for the AVATAR_STOP_TALKING event to signal that speaking is truly done
       await new Promise<void>((resolve) => {
         avatarRef.current?.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-          console.log("Avatar finished speaking (event received).");
-          resolve();
-        });
-      });
-      console.log("Greeting spoken successfully");
-      hasGreetedRef.current = true;
+          console.log("Avatar finished speaking (event received).")
+          resolve()
+        })
+      })
+      console.log("Greeting spoken successfully")
+      hasGreetedRef.current = true
     } catch (error) {
-      console.log(`Error in speakGreeting: ${error instanceof Error ? error.message : String(error)}`);
+      console.log(`Error in speakGreeting: ${error instanceof Error ? error.message : String(error)}`)
     }
-  }, []);
-  
+  }, [])
+
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
       if ("webkitSpeechRecognition" in window) {
-        recognitionRef.current = new (window as any).webkitSpeechRecognition();
-        recognitionRef.current.continuous = false;
-        recognitionRef.current.interimResults = false;
-  
+        recognitionRef.current = new (window as any).webkitSpeechRecognition()
+        recognitionRef.current.continuous = false
+        recognitionRef.current.interimResults = false
+
         recognitionRef.current.onstart = () => {
-          console.log("Voice recognition started");
-          setIsRecognitionActive(true);
-        };
-  
+          console.log("Voice recognition started")
+          setIsRecognitionActive(true)
+        }
+
         recognitionRef.current.onresult = (event: any) => {
           // If the sheet is open, ignore any voice input.
           if (sheetOpenRef.current) {
-            console.log("Sheet is open, ignoring voice input.");
-            return;
+            console.log("Sheet is open, ignoring voice input.")
+            return
           }
           // NEW: If greeting is in progress, ignore any voice input.
           if (isGreetingRef.current) {
-            console.log("Greeting in progress, ignoring voice input.");
-            return;
+            console.log("Greeting in progress, ignoring voice input.")
+            return
           }
-          const last = event.results.length - 1;
-          const userResponse = event.results[last][0].transcript;
-          console.log(`User said: ${userResponse}`);
-          handler(userResponse);
-        };
-  
+          const last = event.results.length - 1
+          const userResponse = event.results[last][0].transcript
+          console.log(`User said: ${userResponse}`)
+          handler(userResponse)
+        }
+
         recognitionRef.current.onerror = (event: any) => {
-          console.log(`Speech recognition error: ${event.error}`);
-        };
-  
+          console.log(`Speech recognition error: ${event.error}`)
+        }
+
         recognitionRef.current.onend = () => {
-          console.log("Voice recognition ended");
-          setIsRecognitionActive(false);
+          console.log("Voice recognition ended")
+          setIsRecognitionActive(false)
           if (
             examStage === "additionalQuestion1" ||
             examStage === "additionalQuestion2" ||
             examStage === "followUpQuestion"
           ) {
-            startVoiceRecognition(handler);
+            startVoiceRecognition(handler)
           }
-        };
-  
-        recognitionRef.current.start();
+        }
+
+        recognitionRef.current.start()
       } else {
-        console.log("Web Speech API is not supported in this browser");
+        console.log("Web Speech API is not supported in this browser")
       }
     },
-    [examStage]
-  );
-  
-  
+    [examStage],
+  )
+
   const stopVoiceRecognition = useCallback(() => {
     if (recognitionRef.current) {
       recognitionRef.current.stop()
@@ -546,96 +543,90 @@ useEffect(() => {
     [startExam, onReturnToLanding, pauseVoiceRecognition, examStage],
   )
 
-
-  const hasInitializedRef = useRef(false);
-
+  const hasInitializedRef = useRef(false)
 
   const startSession = useCallback(async () => {
     if (hasInitializedRef.current) {
-      console.log("Session already started, skipping initialization.");
-      return;
+      console.log("Session already started, skipping initialization.")
+      return
     }
-    hasInitializedRef.current = true;
-    setIsLoading(true);
-    setIsInitializing(true);
-    console.log("Starting session...");
-  
-    const token = await fetchAccessToken();
+    hasInitializedRef.current = true
+    setIsLoading(true)
+    setIsInitializing(true)
+    console.log("Starting session...")
+
+    const token = await fetchAccessToken()
     if (!token) {
-      setIsLoading(false);
-      setIsInitializing(false);
-      console.log("Failed to start session: No HeyGen access token");
-      return;
+      setIsLoading(false)
+      setIsInitializing(false)
+      console.log("Failed to start session: No HeyGen access token")
+      return
     }
-  
+
     try {
-      console.log("Initializing StreamingAvatar...");
-      avatarRef.current = new StreamingAvatar({ token });
-  
-      console.log("Setting up event listeners...");
+      console.log("Initializing StreamingAvatar...")
+      avatarRef.current = new StreamingAvatar({ token })
+
+      console.log("Setting up event listeners...")
       const streamReadyPromise = new Promise<void>((resolve) => {
         avatarRef.current!.on(StreamingEvents.STREAM_READY, (event) => {
-          console.log("Stream ready event received");
-          console.log(">>>>> Stream ready:", event.detail);
-          setStream(event.detail);
-          resolve();
-        });
-      });
-  
+          console.log("Stream ready event received")
+          console.log(">>>>> Stream ready:", event.detail)
+          setStream(event.detail)
+          resolve()
+        })
+      })
+
       // In the stop-talking event, only restart voice recognition if we're not greeting.
       avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-        console.log("Avatar stopped talking");
+        console.log("Avatar stopped talking")
         if (avatarRef.current) {
           if (!isGreeting && examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-            avatarRef.current.closeVoiceChat();
-            console.log("Avatar stopped talking and voice chat closed");
-            startVoiceRecognition(handleInitialResponse);
+            avatarRef.current.closeVoiceChat()
+            console.log("Avatar stopped talking and voice chat closed")
+            startVoiceRecognition(handleInitialResponse)
           } else {
-            pauseVoiceRecognition();
+            pauseVoiceRecognition()
           }
         }
-      });
-  
-      console.log("Creating start avatar...");
+      })
+
+      console.log("Creating start avatar...")
       await avatarRef.current.createStartAvatar({
         quality: AvatarQuality.Low,
         avatarName: "June_HR_public",
         voice: { rate: 1 },
         language: "en",
         knowledgeBase: "",
-      });
-  
-      console.log("Start avatar created successfully");
-  
-      console.log("Waiting for stream to be ready...");
-      await streamReadyPromise;
-  
-      console.log("Starting voice chat...");
-      await avatarRef.current.startVoiceChat();
-      console.log("Voice chat started successfully");
-  
-      console.log("Waiting a short delay to stabilize stream...");
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-  
+      })
+
+      console.log("Start avatar created successfully")
+
+      console.log("Waiting for stream to be ready...")
+      await streamReadyPromise
+
+      console.log("Starting voice chat...")
+      await avatarRef.current.startVoiceChat()
+      console.log("Voice chat started successfully")
+
+      console.log("Waiting a short delay to stabilize stream...")
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+
       // console.log("Stream is fully ready, now speaking greeting...");
       // setIsGreeting(true);
       // avatarRef.current.closeVoiceChat();
       // await speakGreeting();
       // setIsGreeting(false);
-  
+
       // Only start voice recognition after the greeting is complete.
       if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-        startVoiceRecognition(handleInitialResponse);
+        startVoiceRecognition(handleInitialResponse)
       }
     } catch (error) {
-      console.log(
-        `Error during avatar initialization: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      console.log(`Error during avatar initialization: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
-      setIsLoading(false);
-      setIsInitializing(false);
+      setIsLoading(false)
+      setIsInitializing(false)
     }
   }, [
     fetchAccessToken,
@@ -656,170 +647,45 @@ useEffect(() => {
 
   useEffect(() => {
     if (isSheetOpen) {
-      console.log("Sheet is open, stopping voice recognition.");
-      stopVoiceRecognition();
+      console.log("Sheet is open, stopping voice recognition.")
+      stopVoiceRecognition()
     }
-  }, [isSheetOpen, stopVoiceRecognition]);
+  }, [isSheetOpen, stopVoiceRecognition])
 
   const downloadSummary = useCallback(async () => {
-    const formatDate = (date: Date) => {
-      return date.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: true,
+    try {
+      const response = await fetch("/api/generate-summary", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          examResult,
+          hourlyRate,
+          successfulCampaign,
+          followUpQuestion,
+          followUpResponse,
+          candidateInfo,
+        }),
       })
+
+      if (!response.ok) {
+        throw new Error("Failed to generate summary")
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.style.display = "none"
+      a.href = url
+      a.download = `interview_summary_${new Date().toISOString().split("T")[0]}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error("Error downloading summary:", error)
+      // You might want to show an error message to the user here
     }
-
-    const workbook = new ExcelJS.Workbook()
-    const worksheet = workbook.addWorksheet("Interview Summary")
-
-    // Define Colors
-    const headerColor = "D6EAF8"
-    const titleColor = "AED6F1"
-
-    worksheet.mergeCells("A1:B1")
-    worksheet.mergeCells("A2:B2")
-    worksheet.mergeCells("A3:B3")
-    worksheet.mergeCells("A7:B7")
-    worksheet.mergeCells("A11:B11")
-    worksheet.mergeCells("A14:B14")
-    worksheet.mergeCells("A17:B17")
-
-    const titleStyle = {
-      alignment: { horizontal: "center", vertical: "middle" },
-      font: { bold: true, color: { argb: "000000" }, size: 14 },
-      fill: { type: "pattern", pattern: "solid", fgColor: { argb: titleColor } },
-    }
-
-    const sectionStyle = {
-      alignment: { horizontal: "center", vertical: "middle" },
-      font: { bold: true, size: 12, color: { argb: "000000" } },
-      fill: { type: "pattern", pattern: "solid", fgColor: { argb: headerColor } },
-    }
-
-    const borderStyle: Partial<ExcelJS.Borders> = {
-      top: { style: "thin" as const, color: { argb: "ADD8E6" } },
-      left: { style: "thin" as const, color: { argb: "ADD8E6" } },
-      bottom: { style: "thin" as const, color: { argb: "ADD8E6" } },
-      right: { style: "thin" as const, color: { argb: "ADD8E6" } },
-    }
-
-    worksheet.getCell("A1").value = "Interview Summary Report"
-    worksheet.getCell("A1").font = { name: "Georgia", bold: true, italic: true, size: 20, color: { argb: "000000" } }
-    worksheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" }
-    worksheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: titleColor } }
-
-    worksheet.getCell("A2").value = `Generated on: ${formatDate(new Date())}`
-    Object.assign(worksheet.getCell("A2"), titleStyle)
-
-    worksheet.getCell("A3").value = "CANDIDATE INFORMATION"
-    Object.assign(worksheet.getCell("A3"), sectionStyle)
-
-    worksheet.getCell("A4").value = "Full Name:"
-    worksheet.getCell("B4").value = candidateInfo?.name || "N/A"
-
-    worksheet.getCell("A5").value = "Email:"
-    worksheet.getCell("B5").value = candidateInfo?.email || "N/A"
-
-    worksheet.getCell("A6").value = "Phone:"
-    worksheet.getCell("B6").value = candidateInfo?.phone || "N/A"
-
-    worksheet.getCell("A7").value = "EXAM RESULTS"
-    Object.assign(worksheet.getCell("A7"), sectionStyle)
-
-    worksheet.getCell("A8").value = "Status:"
-    worksheet.getCell("B8").value = examResult?.isCorrect ? "PASSED" : "FAILED"
-
-    worksheet.getCell("A9").value = "Formula Accuracy:"
-    worksheet.getCell("B9").value = `${examResult?.formulaAccuracy || 0}%`
-
-    worksheet.getCell("A10").value = "Calculation Accuracy:"
-    worksheet.getCell("B10").value = `${examResult?.calculationAccuracy || 0}%`
-
-    worksheet.getCell("A11").value = "INTERVIEW RESPONSES"
-    Object.assign(worksheet.getCell("A11"), sectionStyle)
-
-    worksheet.getCell("A12").value = "Expected Hourly Rate:"
-    worksheet.getCell("B12").value = hourlyRate || "N/A"
-
-    worksheet.getCell("A13").value = "Most Successful Campaign:"
-    worksheet.getCell("B13").value = successfulCampaign || "N/A"
-
-    worksheet.getCell("A14").value = "FOLLOW-UP ASSESSMENT"
-    Object.assign(worksheet.getCell("A14"), sectionStyle)
-
-    worksheet.getCell("A15").value = "Question:"
-    worksheet.getCell("B15").value = followUpQuestion || "N/A"
-
-    worksheet.getCell("A16").value = "Response:"
-    worksheet.getCell("B16").value = followUpResponse || "N/A"
-
-    worksheet.getCell("A17").value = "End of Report"
-    Object.assign(worksheet.getCell("A17"), sectionStyle)
-
-    worksheet.eachRow((row) => {
-      row.eachCell((cell) => {
-        cell.border = borderStyle
-      })
-    })
-
-    ;["A4", "A5", "A6", "A8", "A9", "A10", "A12", "A13", "A15", "A16"].forEach((cellRef) => {
-      worksheet.getCell(cellRef).font = { bold: true }
-    })
-
-    ;[
-      "A4",
-      "B4",
-      "A5",
-      "B5",
-      "A6",
-      "B6",
-      "A8",
-      "B8",
-      "A9",
-      "B9",
-      "A10",
-      "B10",
-      "A12",
-      "B12",
-      "A13",
-      "B13",
-      "A15",
-      "B15",
-      "A16",
-      "B16",
-    ].forEach((cellRef) => {
-      worksheet.getCell(cellRef).alignment = { vertical: "middle", horizontal: "left" }
-    })
-
-    ;["B13", "B15", "B16"].forEach((cellRef) => {
-      worksheet.getCell(cellRef).alignment = { wrapText: true, vertical: "middle", horizontal: "left" }
-    })
-
-    worksheet.columns = [
-      { key: "colA", width: 30 },
-      { key: "colB", width: 50 },
-    ]
-
-    ;[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 17].forEach((rowNum) => {
-      worksheet.getRow(rowNum).height = 30
-    })
-    ;[13, 15, 16].forEach((rowNum) => {
-      worksheet.getRow(rowNum).height = 70
-    })
-
-    worksheet.spliceRows(18, 1)
-
-    const buffer = await workbook.xlsx.writeBuffer()
-    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
-
-    const fileName = `${(candidateInfo?.name || "candidate").toLowerCase().replace(/\s+/g, "_")}_${new Date()
-      .toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })
-      .replace(/\//g, "_")}.xlsx`
-    saveAs(blob, fileName)
   }, [examResult, hourlyRate, successfulCampaign, followUpQuestion, followUpResponse, candidateInfo])
 
   useEffect(() => {
@@ -887,32 +753,32 @@ useEffect(() => {
                       <SkeletonLoader />
                     )
                   ) : stream ? (
-<video
-  ref={(el) => {
-    if (el && !el.srcObject) {
-      el.srcObject = stream;
-      el.onloadedmetadata = () => {
-        console.log("Video metadata loaded. Avatar should be visible now.");
-        // Once the video is loaded, start the greeting if it hasn't already been spoken.
-        if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-          // Ensure voice recognition is off during greeting.
-          stopVoiceRecognition();
-          setIsGreeting(true);
-          speakGreeting().then(() => {
-            setIsGreeting(false);
-            // Now that greeting is done, start voice recognition.
-            startVoiceRecognition(handleInitialResponse);
-          });
-        }
-      };
-    }
-  }}
-  autoPlay
-  playsInline
-  className="w-full h-full object-cover"
->
-  <track kind="captions" />
-</video>
+                    <video
+                      ref={(el) => {
+                        if (el && !el.srcObject) {
+                          el.srcObject = stream
+                          el.onloadedmetadata = () => {
+                            console.log("Video metadata loaded. Avatar should be visible now.")
+                            // Once the video is loaded, start the greeting if it hasn't already been spoken.
+                            if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
+                              // Ensure voice recognition is off during greeting.
+                              stopVoiceRecognition()
+                              setIsGreeting(true)
+                              speakGreeting().then(() => {
+                                setIsGreeting(false)
+                                // Now that greeting is done, start voice recognition.
+                                startVoiceRecognition(handleInitialResponse)
+                              })
+                            }
+                          }
+                        }
+                      }}
+                      autoPlay
+                      playsInline
+                      className="w-full h-full object-cover"
+                    >
+                      <track kind="captions" />
+                    </video>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <p className="text-gray-500">Start by clicking "Begin Interview" button</p>
@@ -920,9 +786,7 @@ useEffect(() => {
                   )}
                 </div>
                 {isLoading && (
-                  <div className="w-full text-center py-4 text-blue-600">
-                    Starting interview session...
-                  </div>
+                  <div className="w-full text-center py-4 text-blue-600">Starting interview session...</div>
                 )}
               </CardContent>
             </Card>
@@ -1013,3 +877,4 @@ useEffect(() => {
     </div>
   )
 }
+
