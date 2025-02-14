@@ -8,8 +8,16 @@ export async function GET() {
       throw new Error("Google Sheet URL not configured")
     }
 
-    // Keep the original edit URL
-    const embeddedUrl = sheetUrl
+    // Convert edit URL to embedded URL
+    const embeddedUrl = sheetUrl.replace(/\/edit#gid=/, "/embed?gid=")
+
+    // Validate the URL
+    try {
+      new URL(embeddedUrl)
+    } catch (e) {
+      console.error("Invalid sheet URL:", embeddedUrl)
+      throw new Error("Invalid sheet URL")
+    }
 
     const sheetData = {
       versionA: {
@@ -30,6 +38,8 @@ export async function GET() {
       },
       theoreticalAnswer: "",
     }
+
+    console.log("Returning sheet URL:", embeddedUrl)
 
     return NextResponse.json({
       url: embeddedUrl,

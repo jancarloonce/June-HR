@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button"
 import StreamingAvatar, { AvatarQuality, StreamingEvents, TaskMode, TaskType } from "@heygen/streaming-avatar"
 import { ExamArea } from "./ExamArea/ExamArea"
 import { SkeletonLoader } from "./SkeletonLoader"
-import { CheckIcon, XIcon, Bot } from "lucide-react"
+import { CheckIcon, XIcon, Bot, RefreshCw } from "lucide-react"
 import { motion } from "framer-motion"
 import LoadingCountdown from "./LoadingCountdown"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 interface InteractiveAvatarProps {
   onReturnToLanding: () => void
@@ -66,6 +67,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   const [followUpResponse, setFollowUpResponse] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState<string>("")
   const [isInitializing, setIsInitializing] = useState(false)
+  const [sheetError, setSheetError] = useState<string | null>(null)
   // Use a ref to track if the greeting has already been spoken.
   const hasGreetedRef = useRef(false)
   const isGreetingRef = useRef(isGreeting)
@@ -393,7 +395,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       if (avatarRef.current) {
         const speechText = result.isCorrect
           ? `You have successfully completed the exam. Your formula accuracy was ${result.formulaAccuracy}% and calculation accuracy was ${result.calculationAccuracy}%. ${result.feedback}`
-          : `I'm sorry, but there were some issues with your exam. ${result.feedback}`
+          : `I'm sorry, Unfortunately you failed the exam. We appreciate your time and participation in this interview. The interview is now complete. You can now review the summary or return to the landing page when you're ready."`
         await avatarRef.current.speak({
           text: speechText,
           taskType: TaskType.REPEAT,
@@ -450,6 +452,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     pauseVoiceRecognition()
     setIsExamStarted(true)
     setIsExamInProgress(true)
+    setSheetError(null) // Reset any previous errors
     try {
       if (!sheetUrl) {
         const response = await fetch("/api/get-sheet-url")
@@ -478,6 +481,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       }
     } catch (error) {
       setExamStage("notStarted")
+      setSheetError("Failed to load the exam sheet. Please try again.")
       console.log(`Failed to start exam: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }, [pauseVoiceRecognition, sheetUrl])
@@ -638,7 +642,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     isExamInProgress,
     pauseVoiceRecognition,
     isGreeting, // include isGreeting in dependencies
-  ]);
+  ])
 
   useEffect(() => {
     // Auto-start the session on component mount.
@@ -808,6 +812,14 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                         <SkeletonLoader />
                       </CardContent>
                     </Card>
+                  ) : sheetError ? (
+                    <Alert variant="destructive">
+                      <AlertTitle>Error</AlertTitle>
+                      <AlertDescription>{sheetError}</AlertDescription>
+                      <Button onClick={startExam} className="mt-4">
+                        <RefreshCw className="mr-2 h-4 w-4" /> Retry
+                      </Button>
+                    </Alert>
                   ) : (
                     <ExamArea
                       sheetVisible={isSheetOpen}
