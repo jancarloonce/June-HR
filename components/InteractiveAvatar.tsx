@@ -174,8 +174,9 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
-      if ("webkitSpeechRecognition" in window) {
-        recognitionRef.current = new (window as any).webkitSpeechRecognition()
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      if (SpeechRecognition) {
+        recognitionRef.current = new SpeechRecognition()
         recognitionRef.current.continuous = false
         recognitionRef.current.interimResults = false
 
@@ -185,12 +186,10 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         }
 
         recognitionRef.current.onresult = (event: any) => {
-          // If the sheet is open, ignore any voice input.
           if (sheetOpenRef.current) {
             console.log("Sheet is open, ignoring voice input.")
             return
           }
-          // NEW: If greeting is in progress, ignore any voice input.
           if (isGreetingRef.current) {
             console.log("Greeting in progress, ignoring voice input.")
             return
@@ -219,7 +218,8 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
         recognitionRef.current.start()
       } else {
-        console.log("Web Speech API is not supported in this browser")
+        console.log("Speech Recognition API is not supported in this browser")
+        //implement a fallback method or show a message to the user
       }
     },
     [examStage],
@@ -785,7 +785,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                     </video>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <p className="text-gray-500">Start by clicking "Begin Interview" button</p>
+                      <p className="text-gray-500">Initializing AI interviewer...</p>
                     </div>
                   )}
                 </div>
@@ -795,7 +795,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
               </CardContent>
             </Card>
           </motion.div>
-
           {!isAvatarCentered && (
             <motion.div
               className="w-full lg:w-3/4 h-[calc(100vh-8rem)] overflow-hidden"
