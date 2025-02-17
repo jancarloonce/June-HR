@@ -121,12 +121,12 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         throw new Error("No sheet URL received in response")
       }
       console.log("Successfully retrieved Google Sheet URL:", data.url)
-  
+
       const sheetWindow = window.open(data.url, "_blank")
       if (!sheetWindow) {
         console.warn("Unable to open sheet automatically. It may be blocked by a popup blocker.")
       }
-  
+
       return data.url
     } catch (error) {
       console.error(`Error fetching sheet URL: ${error instanceof Error ? error.message : "Unknown error occurred"}`)
@@ -161,10 +161,10 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       console.log("Greeting already spoken, skipping.")
       return
     }
-  
+
     console.log("Checking if avatar is ready before speaking...")
     await new Promise((resolve) => setTimeout(resolve, 300))
-  
+
     console.log("Speaking greeting...")
     try {
       avatarRef.current.closeVoiceChat()
@@ -188,305 +188,312 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   }, [])
 
   // --- Fallback Helpers for Voice Recognition ---
-  
+
   const shouldFallbackToWhisper = useCallback(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
     return !SpeechRecognition || isIOS || isSafari
   }, [])
-  
-  const startWhisperRecognition = useCallback(
-    async (handler: (response: string) => void) => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        let options: MediaRecorderOptions = {};
-        if (typeof MediaRecorder.isTypeSupported === "function") {
-          if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-            options.mimeType = "audio/webm;codecs=opus";
-          } else if (MediaRecorder.isTypeSupported("audio/webm")) {
-            options.mimeType = "audio/webm";
-          } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
-            options.mimeType = "audio/mp4";
-          } else {
-            console.warn("No preferred MIME type supported, using default settings.");
-          }
+
+  const startWhisperRecognition = useCallback(async (handler: (response: string) => void) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const options: MediaRecorderOptions = {}
+      if (typeof MediaRecorder.isTypeSupported === "function") {
+        if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          options.mimeType = "audio/webm;codecs=opus"
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+          options.mimeType = "audio/webm"
+        } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+          options.mimeType = "audio/mp4"
+        } else {
+          console.warn("No preferred MIME type supported, using default settings.")
         }
-        const mediaRecorder = new MediaRecorder(stream, options);
-        mediaRecorderRef.current = mediaRecorder;
-        const chunks: BlobPart[] = [];
-  
-        mediaRecorder.onstart = () => {
-          console.log("MediaRecorder started recording for Whisper fallback.");
-          setIsRecognitionActive(true);
-        };
-  
-        mediaRecorder.ondataavailable = (event: BlobEvent) => {
-          if (event.data.size > 0) {
-            chunks.push(event.data);
-          }
-        };
-  
-        mediaRecorder.onstop = async () => {
-          console.log("MediaRecorder stopped recording.");
-          setIsRecognitionActive(false);
-          const audioBlob = new Blob(chunks, { type: options.mimeType || "audio/webm" });
-          const formData = new FormData();
-          formData.append("audio", audioBlob, "recording." + (options.mimeType?.includes("mp4") ? "mp4" : "webm"));
-          try {
-            const response = await fetch("/api/transcribe-whisper", {
-              method: "POST",
-              body: formData,
-            });
-            if (!response.ok) {
-              throw new Error(`Whisper transcription failed: ${response.statusText}`);
-            }
-            const result = await response.json();
-            console.log("Whisper transcript:", result.transcript);
-            // Filter out trivial transcript like "you"
-            if (result.transcript.trim().toLowerCase() === "you") {
-              console.log("Transcript 'you' detected in Whisper fallback. Restarting recognition.");
-              startVoiceRecognition(handler);
-              return;
-            }
-            handler(result.transcript);
-          } catch (error) {
-            console.error("Error transcribing audio with Whisper:", error);
-          }
-        };
-  
-        mediaRecorder.start();
-        setTimeout(() => {
-          if (mediaRecorder.state !== "inactive") {
-            mediaRecorder.stop();
-          }
-        }, 5000);
-      } catch (error) {
-        console.error("Error in MediaRecorder fallback:", error);
       }
-    },
-    []
-  );
-  
+      const mediaRecorder = new MediaRecorder(stream, options)
+      mediaRecorderRef.current = mediaRecorder
+      const chunks: BlobPart[] = []
+
+      mediaRecorder.onstart = () => {
+        console.log("MediaRecorder started recording for Whisper fallback.")
+        setIsRecognitionActive(true)
+      }
+
+      mediaRecorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data)
+        }
+      }
+
+      mediaRecorder.onstop = async () => {
+        console.log("MediaRecorder stopped recording.")
+        setIsRecognitionActive(false)
+        const audioBlob = new Blob(chunks, { type: options.mimeType || "audio/webm" })
+        console.log(`Audio blob size: ${audioBlob.size} bytes`)
+
+        if (audioBlob.size < 1000) {
+          // Ignore very small audio blobs
+          console.log("Audio blob too small, ignoring.")
+          startVoiceRecognition(handler)
+          return
+        }
+
+        const formData = new FormData()
+        formData.append("audio", audioBlob, "recording." + (options.mimeType?.includes("mp4") ? "mp4" : "webm"))
+        try {
+          const response = await fetch("/api/transcribe-whisper", {
+            method: "POST",
+            body: formData,
+          })
+          if (!response.ok) {
+            throw new Error(`Whisper transcription failed: ${response.statusText}`)
+          }
+          const result = await response.json()
+          console.log("Whisper transcript:", result.transcript)
+
+          // Filter out trivial transcripts
+          if (result.transcript.trim().toLowerCase() === "you" || result.transcript.trim().length < 2) {
+            console.log("Trivial transcript detected. Restarting recognition.")
+            startVoiceRecognition(handler)
+            return
+          }
+          handler(result.transcript)
+        } catch (error) {
+          console.error("Error transcribing audio with Whisper:", error)
+        }
+      }
+
+      mediaRecorder.start()
+      setTimeout(() => {
+        if (mediaRecorder.state !== "inactive") {
+          mediaRecorder.stop()
+        }
+      }, 5000) // Increased recording time to 5 seconds
+    } catch (error) {
+      console.error("Error in MediaRecorder fallback:", error)
+    }
+  }, [])
+
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
       if (isGreetingRef.current) {
-        console.log("Greeting is still in progress, delaying voice recognition...");
-        setTimeout(() => startVoiceRecognition(handler), 500);
-        return;
+        console.log("Greeting is still in progress, delaying voice recognition...")
+        setTimeout(() => startVoiceRecognition(handler), 500)
+        return
       }
-  
+
       if (!shouldFallbackToWhisper()) {
-        console.log("Using Web Speech API for voice recognition.");
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        console.log("Using Web Speech API for voice recognition.")
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
         if (SpeechRecognition) {
-          recognitionRef.current = new SpeechRecognition();
-          recognitionRef.current.continuous = false;
-          recognitionRef.current.interimResults = false;
-    
+          recognitionRef.current = new SpeechRecognition()
+          recognitionRef.current.continuous = false
+          recognitionRef.current.interimResults = false
+
           recognitionRef.current.onstart = () => {
-            console.log("Voice recognition started");
-            setIsRecognitionActive(true);
-          };
-    
+            console.log("Voice recognition started")
+            setIsRecognitionActive(true)
+          }
+
           recognitionRef.current.onresult = (event: any) => {
             if (sheetOpenRef.current) {
-              console.log("Sheet is open, ignoring voice input.");
-              return;
+              console.log("Sheet is open, ignoring voice input.")
+              return
             }
             if (isGreetingRef.current) {
-              console.log("Greeting in progress, ignoring voice input.");
-              return;
+              console.log("Greeting in progress, ignoring voice input.")
+              return
             }
-            const last = event.results.length - 1;
-            const transcript = event.results[last][0].transcript.trim();
-            console.log(`User said: ${transcript}`);
-            if (transcript.toLowerCase() === "you") {
-              console.log("Transcript 'you' detected. Restarting voice recognition.");
-              startVoiceRecognition(handler);
-              return;
+            const last = event.results.length - 1
+            const transcript = event.results[last][0].transcript.trim()
+            console.log(`User said: ${transcript}`)
+            if (transcript.toLowerCase() === "you" || transcript.length < 2) {
+              console.log("Trivial transcript detected. Restarting voice recognition.")
+              startVoiceRecognition(handler)
+              return
             }
-            handler(transcript);
-          };
-    
+            handler(transcript)
+          }
+
           recognitionRef.current.onerror = (event: any) => {
-            console.log(`Speech recognition error: ${event.error}`);
-          };
-    
+            console.log(`Speech recognition error: ${event.error}`)
+          }
+
           recognitionRef.current.onend = () => {
-            console.log("Voice recognition ended");
-            setIsRecognitionActive(false);
+            console.log("Voice recognition ended")
+            setIsRecognitionActive(false)
             if (
               examStage === "additionalQuestion1" ||
               examStage === "additionalQuestion2" ||
               examStage === "followUpQuestion"
             ) {
-              startVoiceRecognition(handler);
+              startVoiceRecognition(handler)
             }
-          };
-    
-          recognitionRef.current.start();
+          }
+
+          recognitionRef.current.start()
         }
       } else {
-        console.log("Falling back to Whisper via MediaRecorder.");
-        startWhisperRecognition(handler);
+        console.log("Falling back to Whisper via MediaRecorder.")
+        startWhisperRecognition(handler)
       }
     },
-    [shouldFallbackToWhisper, examStage, startWhisperRecognition]
-  );
-  
+    [shouldFallbackToWhisper, examStage, startWhisperRecognition],
+  )
+
   const stopVoiceRecognition = useCallback(() => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      console.log("Voice recognition stopped");
+      recognitionRef.current.stop()
+      console.log("Voice recognition stopped")
     }
     if (mediaRecorderRef.current) {
       if (mediaRecorderRef.current.state !== "inactive") {
-        mediaRecorderRef.current.stop();
-        console.log("MediaRecorder stopped.");
+        mediaRecorderRef.current.stop()
+        console.log("MediaRecorder stopped.")
       }
     }
-  }, []);
-  
+  }, [])
+
   const pauseVoiceRecognition = useCallback(() => {
     if (recognitionRef.current) {
-      recognitionRef.current.abort();
-      console.log("Voice recognition paused");
+      recognitionRef.current.abort()
+      console.log("Voice recognition paused")
     }
-  }, []);
-  
+  }, [])
+
   const finishInterview = useCallback(() => {
-    setExamStage("summary");
-    setIsSummaryAvailable(true);
+    setExamStage("summary")
+    setIsSummaryAvailable(true)
     if (avatarRef.current) {
       avatarRef.current.speak({
         text: "Thank you for sharing those additional details. We appreciate your time and participation in this interview. The interview is now complete. You can now review the summary or return to the landing page when you're ready. We will be reaching out within 24 hours.",
         taskType: TaskType.REPEAT,
         taskMode: TaskMode.SYNC,
-      });
+      })
       avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-        stopVoiceRecognition();
-      });
+        stopVoiceRecognition()
+      })
     }
-  }, [stopVoiceRecognition]);
-  
+  }, [stopVoiceRecognition])
+
   const handleSuccessfulCampaignResponse = useCallback(
     async (userResponse: string) => {
-      console.log(`Handling successful campaign response. Length: ${userResponse.length}`);
-      setSuccessfulCampaign(userResponse);
-  
+      console.log(`Handling successful campaign response. Length: ${userResponse.length}`)
+      setSuccessfulCampaign(userResponse)
+
       try {
-        console.log("Generating follow-up question...");
+        console.log("Generating follow-up question...")
         const response = await fetch("/api/generate-follow-up", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ campaignDescription: userResponse }),
-        });
-  
+        })
+
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          throw new Error(`HTTP error! status: ${response.status}`)
         }
-  
-        const result = await response.json();
-        setFollowUpQuestion(result.followUpQuestion);
-  
-        console.log("Setting exam stage to followUpQuestion");
-        setExamStage("followUpQuestion");
+
+        const result = await response.json()
+        setFollowUpQuestion(result.followUpQuestion)
+
+        console.log("Setting exam stage to followUpQuestion")
+        setExamStage("followUpQuestion")
         if (avatarRef.current) {
-          console.log("Avatar speaking follow-up question");
+          console.log("Avatar speaking follow-up question")
           await avatarRef.current.speak({
             text: `Thank you for sharing that experience. ${result.followUpQuestion}`,
             taskType: TaskType.REPEAT,
             taskMode: TaskMode.SYNC,
-          });
+          })
           avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-            console.log("Avatar finished speaking, starting voice recognition for follow-up");
-            startVoiceRecognition(handleFollowUpResponse);
-          });
+            console.log("Avatar finished speaking, starting voice recognition for follow-up")
+            startVoiceRecognition(handleFollowUpResponse)
+          })
         }
       } catch (error) {
-        console.error("Error generating follow-up question:", error);
-        finishInterview();
+        console.error("Error generating follow-up question:", error)
+        finishInterview()
       }
     },
-    [startVoiceRecognition, finishInterview]
-  );
-  
+    [startVoiceRecognition, finishInterview],
+  )
+
   const handleFollowUpResponse = useCallback(
     (userResponse: string) => {
-      console.log(`Handling follow-up response. Length: ${userResponse.length}`);
-      setFollowUpResponse(userResponse);
-      setIsSheetOpen(false);
-      finishInterview();
+      console.log(`Handling follow-up response. Length: ${userResponse.length}`)
+      setFollowUpResponse(userResponse)
+      setIsSheetOpen(false)
+      finishInterview()
     },
-    [finishInterview]
-  );
-  
+    [finishInterview],
+  )
+
   const handleHourlyRateResponse = useCallback(
     async (userResponse: string) => {
-      console.log(`Handling hourly rate response: ${userResponse}`);
-      setHourlyRate(userResponse);
-      setExamStage("additionalQuestion2");
+      console.log(`Handling hourly rate response: ${userResponse}`)
+      setHourlyRate(userResponse)
+      setExamStage("additionalQuestion2")
       if (avatarRef.current) {
         await avatarRef.current.speak({
           text: `Thank you for sharing your expected hourly rate. Now, can you tell me about your most successful campaign?`,
           taskType: TaskType.REPEAT,
           taskMode: TaskMode.SYNC,
-        });
+        })
         avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-          console.log("Avatar finished speaking about successful campaign question");
-          startVoiceRecognition(handleSuccessfulCampaignResponse);
-        });
+          console.log("Avatar finished speaking about successful campaign question")
+          startVoiceRecognition(handleSuccessfulCampaignResponse)
+        })
       }
     },
-    [startVoiceRecognition, handleSuccessfulCampaignResponse]
-  );
-  
+    [startVoiceRecognition, handleSuccessfulCampaignResponse],
+  )
+
   const askAdditionalQuestion = useCallback(async () => {
-    console.log("Asking additional question...");
-    setIsSummaryAvailable(false);
+    console.log("Asking additional question...")
+    setIsSummaryAvailable(false)
     if (avatarRef.current) {
       try {
-        setExamStage("additionalQuestion1");
+        setExamStage("additionalQuestion1")
         await avatarRef.current.speak({
           text: "Now, I have a couple more questions for you. First, what is your expected hourly rate?",
           taskType: TaskType.REPEAT,
           taskMode: TaskMode.SYNC,
-        });
-        console.log("Additional question asked successfully");
+        })
+        console.log("Additional question asked successfully")
         avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-          startVoiceRecognition(handleHourlyRateResponse);
-        });
+          startVoiceRecognition(handleHourlyRateResponse)
+        })
       } catch (error) {
-        console.log(`Error in askAdditionalQuestion: ${error instanceof Error ? error.message : String(error)}`);
+        console.log(`Error in askAdditionalQuestion: ${error instanceof Error ? error.message : String(error)}`)
       }
     } else {
-      console.log("Avatar not initialized, cannot ask additional question");
+      console.log("Avatar not initialized, cannot ask additional question")
     }
-  }, [startVoiceRecognition, handleHourlyRateResponse]);
-  
+  }, [startVoiceRecognition, handleHourlyRateResponse])
+
   const handleSubmitExam = useCallback(async () => {
-    console.log("Submitting exam...");
-    setIsSubmitting(true);
-    setIsSheetOpen(false);
-    stopVoiceRecognition();
-  
+    console.log("Submitting exam...")
+    setIsSubmitting(true)
+    setIsSheetOpen(false)
+    stopVoiceRecognition()
+
     if (!sheetUrl) {
-      console.log("Error: Sheet URL is not available");
-      setExamStage("error");
+      console.log("Error: Sheet URL is not available")
+      setExamStage("error")
       if (avatarRef.current) {
         await avatarRef.current.speak({
           text: "I apologize, but there was an error submitting your exam. The sheet URL is not available.",
           taskType: TaskType.REPEAT,
           taskMode: TaskMode.SYNC,
-        });
+        })
       }
-      setIsSubmitting(false);
-      return;
+      setIsSubmitting(false)
+      return
     }
-  
+
     try {
       const response = await fetch("/api/verify-exam", {
         method: "POST",
@@ -494,20 +501,20 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ sheetUrl }),
-      });
-  
+      })
+
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Error response:", errorText);
-        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+        const errorText = await response.text()
+        console.error("Error response:", errorText)
+        throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`)
       }
-  
-      const result: ExamResult = await response.json();
-      setExamResult(result);
-      setIsSummaryAvailable(true);
-      setExamStage("completed");
-      console.log("Exam submitted and verified");
-  
+
+      const result: ExamResult = await response.json()
+      setExamResult(result)
+      setIsSummaryAvailable(true)
+      setExamStage("completed")
+      console.log("Exam submitted and verified")
+
       if (avatarRef.current) {
         const speechText = result.isCorrect
           ? `You have successfully completed the exam. Your formula accuracy was ${result.formulaAccuracy}% and calculation accuracy was ${result.calculationAccuracy}%. ${result.feedback}`
@@ -516,97 +523,97 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           text: speechText,
           taskType: TaskType.REPEAT,
           taskMode: TaskMode.SYNC,
-        });
+        })
       }
-  
+
       if (result.isCorrect) {
         setTimeout(async () => {
-          await askAdditionalQuestion();
-        }, 2000);
+          await askAdditionalQuestion()
+        }, 2000)
       } else {
-        setExamStage("finished");
+        setExamStage("finished")
       }
     } catch (error) {
-      console.log(`Error submitting exam: ${error instanceof Error ? error.message : String(error)}`);
-      setExamStage("error");
+      console.log(`Error submitting exam: ${error instanceof Error ? error.message : String(error)}`)
+      setExamStage("error")
       if (avatarRef.current) {
         await avatarRef.current.speak({
           text: "I apologize, but there was an error submitting your exam. Please try again later.",
           taskType: TaskType.REPEAT,
           taskMode: TaskMode.SYNC,
-        });
+        })
       }
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
-  }, [sheetUrl, stopVoiceRecognition, askAdditionalQuestion]);
-  
+  }, [sheetUrl, stopVoiceRecognition, askAdditionalQuestion])
+
   const handleVoiceSubmission = useCallback(
     (userResponse: string) => {
-      console.log(`Voice submission detected: ${userResponse}`);
+      console.log(`Voice submission detected: ${userResponse}`)
       if (userResponse.toLowerCase().includes("submit") || userResponse.toLowerCase().includes("finished")) {
-        console.log("Voice command to submit exam detected");
-        handleSubmitExam();
+        console.log("Voice command to submit exam detected")
+        handleSubmitExam()
       } else {
-        console.log("Voice command not recognized as submission, continuing exam");
-        startVoiceRecognition(handleVoiceSubmission);
+        console.log("Voice command not recognized as submission, continuing exam")
+        startVoiceRecognition(handleVoiceSubmission)
       }
     },
-    [handleSubmitExam, startVoiceRecognition]
-  );
-  
+    [handleSubmitExam, startVoiceRecognition],
+  )
+
   const openVoiceInput = useCallback(() => {
     if (!isVoiceInputActive) {
-      setIsVoiceInputActive(true);
-      startVoiceRecognition(handleVoiceSubmission);
+      setIsVoiceInputActive(true)
+      startVoiceRecognition(handleVoiceSubmission)
     }
-  }, [isVoiceInputActive, startVoiceRecognition, handleVoiceSubmission]);
-  
+  }, [isVoiceInputActive, startVoiceRecognition, handleVoiceSubmission])
+
   const startExam = useCallback(async () => {
-    console.log("Starting exam...");
-    setExamStage("loading");
-    pauseVoiceRecognition();
-    setIsExamStarted(true);
-    setIsExamInProgress(true);
-    setSheetError(null);
-    setIsCreatingSheet(true);
-  
+    console.log("Starting exam...")
+    setExamStage("loading")
+    pauseVoiceRecognition()
+    setIsExamStarted(true)
+    setIsExamInProgress(true)
+    setSheetError(null)
+    setIsCreatingSheet(true)
+
     try {
-      const url = await fetchSheetUrl();
+      const url = await fetchSheetUrl()
       if (!url) {
-        throw new Error("Failed to fetch sheet data");
+        throw new Error("Failed to fetch sheet data")
       }
-  
-      setSheetUrl(url);
-      setExamStage("inProgress");
-      setIsSheetOpen(true);
-      setIsAvatarCentered(false);
-      setIsVoiceInputActive(false);
-      console.log("Exam started successfully");
-  
+
+      setSheetUrl(url)
+      setExamStage("inProgress")
+      setIsSheetOpen(true)
+      setIsAvatarCentered(false)
+      setIsVoiceInputActive(false)
+      console.log("Exam started successfully")
+
       if (!document.hidden) {
-        const sheetWindow = window.open(url, "_blank");
+        const sheetWindow = window.open(url, "_blank")
         if (!sheetWindow) {
-          console.warn("Unable to open sheet automatically. It may be blocked by a popup blocker.");
+          console.warn("Unable to open sheet automatically. It may be blocked by a popup blocker.")
         }
       }
     } catch (error) {
-      setExamStage("notStarted");
-      setSheetError("Failed to load the exam sheet. Please try again.");
-      console.error(`Failed to start exam: ${error instanceof Error ? error.message : "Unknown error"}`);
+      setExamStage("notStarted")
+      setSheetError("Failed to load the exam sheet. Please try again.")
+      console.error(`Failed to start exam: ${error instanceof Error ? error.message : "Unknown error"}`)
     } finally {
-      setIsCreatingSheet(false);
+      setIsCreatingSheet(false)
     }
-  }, [pauseVoiceRecognition, fetchSheetUrl]);
-  
+  }, [pauseVoiceRecognition, fetchSheetUrl])
+
   const handleInitialResponse = useCallback(
     async (userResponse: string) => {
-      console.log(`Handling initial response: ${userResponse}`);
+      console.log(`Handling initial response: ${userResponse}`)
       if (examStage !== "notStarted") {
-        console.log("Skipping sentiment analysis for non-initial responses");
-        return;
+        console.log("Skipping sentiment analysis for non-initial responses")
+        return
       }
-  
+
       try {
         const response = await fetch("/api/sentiment-identifier", {
           method: "POST",
@@ -617,125 +624,125 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
             question: "Are you ready to start the exam?",
             userResponse: userResponse,
           }),
-        });
-  
+        })
+
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          throw new Error(`HTTP error! status: ${response.status}`)
         }
-  
-        const result = await response.json();
-        const sentiment = result.proceed ? "positive" : "negative";
-        console.log(`Sentiment analysis result: ${sentiment}`);
-  
+
+        const result = await response.json()
+        const sentiment = result.proceed ? "positive" : "negative"
+        console.log(`Sentiment analysis result: ${sentiment}`)
+
         if (sentiment === "positive") {
           if (avatarRef.current) {
             await avatarRef.current.speak({
               text: "Great! Let's begin the exam. I'm opening the exam sheet now. Good luck!",
               taskType: TaskType.REPEAT,
               taskMode: TaskMode.SYNC,
-            });
+            })
           } else {
-            console.log("Avatar reference is null, cannot speak");
+            console.log("Avatar reference is null, cannot speak")
           }
-          pauseVoiceRecognition();
-          startExam();
+          pauseVoiceRecognition()
+          startExam()
         } else {
           if (avatarRef.current) {
             await avatarRef.current.speak({
               text: "I understand. Thank you for your time. You can start the interview again when you're ready.",
               taskType: TaskType.REPEAT,
               taskMode: TaskMode.SYNC,
-            });
+            })
           } else {
-            console.log("Avatar reference is null, cannot speak");
+            console.log("Avatar reference is null, cannot speak")
           }
           avatarRef.current?.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-            onReturnToLanding();
-          });
+            onReturnToLanding()
+          })
         }
       } catch (error) {
-        console.log(`Error in handleInitialResponse: ${error instanceof Error ? error.message : String(error)}`);
+        console.log(`Error in handleInitialResponse: ${error instanceof Error ? error.message : String(error)}`)
       }
     },
-    [startExam, onReturnToLanding, pauseVoiceRecognition, examStage]
-  );
-  
-  const hasInitializedRef = useRef(false);
-  
+    [startExam, onReturnToLanding, pauseVoiceRecognition, examStage],
+  )
+
+  const hasInitializedRef = useRef(false)
+
   const startSession = useCallback(async () => {
     if (hasInitializedRef.current) {
-      console.log("Session already started, skipping initialization.");
-      return;
+      console.log("Session already started, skipping initialization.")
+      return
     }
-    hasInitializedRef.current = true;
-    setIsLoading(true);
-    setIsInitializing(true);
-    console.log("Starting session...");
-  
-    const token = await fetchAccessToken();
+    hasInitializedRef.current = true
+    setIsLoading(true)
+    setIsInitializing(true)
+    console.log("Starting session...")
+
+    const token = await fetchAccessToken()
     if (!token) {
-      setIsLoading(false);
-      setIsInitializing(false);
-      console.log("Failed to start session: No HeyGen access token");
-      return;
+      setIsLoading(false)
+      setIsInitializing(false)
+      console.log("Failed to start session: No HeyGen access token")
+      return
     }
-  
+
     try {
-      console.log("Initializing StreamingAvatar...");
-      avatarRef.current = new StreamingAvatar({ token });
-  
-      console.log("Setting up event listeners...");
+      console.log("Initializing StreamingAvatar...")
+      avatarRef.current = new StreamingAvatar({ token })
+
+      console.log("Setting up event listeners...")
       const streamReadyPromise = new Promise<void>((resolve) => {
         avatarRef.current!.on(StreamingEvents.STREAM_READY, (event) => {
-          console.log("Stream ready event received");
-          console.log(">>>>> Stream ready:", event.detail);
-          setStream(event.detail);
-          resolve();
-        });
-      });
-  
+          console.log("Stream ready event received")
+          console.log(">>>>> Stream ready:", event.detail)
+          setStream(event.detail)
+          resolve()
+        })
+      })
+
       avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-        console.log("Avatar stopped talking");
+        console.log("Avatar stopped talking")
         if (avatarRef.current) {
           if (!isGreeting && examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-            avatarRef.current.closeVoiceChat();
-            console.log("Avatar stopped talking and voice chat closed");
+            avatarRef.current.closeVoiceChat()
+            console.log("Avatar stopped talking and voice chat closed")
             if (!isGreetingRef.current) {
-              startVoiceRecognition(handleInitialResponse);
+              startVoiceRecognition(handleInitialResponse)
             }
           } else {
-            pauseVoiceRecognition();
+            pauseVoiceRecognition()
           }
         }
-      });
-  
-      console.log("Creating start avatar...");
+      })
+
+      console.log("Creating start avatar...")
       await avatarRef.current.createStartAvatar({
         quality: AvatarQuality.Low,
         avatarName: "June_HR_public",
         voice: { rate: 1 },
         language: "en",
         knowledgeBase: "",
-      });
-  
-      console.log("Start avatar created successfully");
-  
-      console.log("Waiting for stream to be ready...");
-      await streamReadyPromise;
-  
-      console.log("Starting voice chat...");
-      await avatarRef.current.startVoiceChat();
-      console.log("Voice chat started successfully");
-  
-      console.log("Waiting a short delay to stabilize stream...");
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-  
+      })
+
+      console.log("Start avatar created successfully")
+
+      console.log("Waiting for stream to be ready...")
+      await streamReadyPromise
+
+      console.log("Starting voice chat...")
+      await avatarRef.current.startVoiceChat()
+      console.log("Voice chat started successfully")
+
+      console.log("Waiting a short delay to stabilize stream...")
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+
       // Do not auto-start recognition here; let the video callback handle it.
     } catch (error) {
-      console.log(`Error during avatar initialization: ${error instanceof Error ? error.message : String(error)}`);
+      console.log(`Error during avatar initialization: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
-      setIsLoading(false);
-      setIsInitializing(false);
+      setIsLoading(false)
+      setIsInitializing(false)
     }
   }, [
     fetchAccessToken,
@@ -746,19 +753,19 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     isExamInProgress,
     pauseVoiceRecognition,
     isGreeting,
-  ]);
-  
+  ])
+
   useEffect(() => {
-    startSession();
-  }, [startSession]);
-  
+    startSession()
+  }, [startSession])
+
   useEffect(() => {
     if (isSheetOpen) {
-      console.log("Sheet is open, stopping voice recognition.");
-      stopVoiceRecognition();
+      console.log("Sheet is open, stopping voice recognition.")
+      stopVoiceRecognition()
     }
-  }, [isSheetOpen, stopVoiceRecognition]);
-  
+  }, [isSheetOpen, stopVoiceRecognition])
+
   const downloadSummary = useCallback(async () => {
     try {
       const response = await fetch("/api/generate-summary", {
@@ -774,29 +781,29 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           followUpResponse,
           candidateInfo,
         }),
-      });
-  
+      })
+
       if (!response.ok) {
-        throw new Error("Failed to generate summary");
+        throw new Error("Failed to generate summary")
       }
-  
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.style.display = "none";
-      a.href = url;
-      a.download = `interview_summary_${new Date().toISOString().split("T")[0]}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.style.display = "none"
+      a.href = url
+      a.download = `interview_summary_${new Date().toISOString().split("T")[0]}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
     } catch (error) {
-      console.error("Error downloading summary:", error);
+      console.error("Error downloading summary:", error)
     }
-  }, [examResult, hourlyRate, successfulCampaign, followUpQuestion, followUpResponse, candidateInfo]);
-  
+  }, [examResult, hourlyRate, successfulCampaign, followUpQuestion, followUpResponse, candidateInfo])
+
   useEffect(() => {
     const updateTime = () => {
-      const now = new Date();
+      const now = new Date()
       const options: Intl.DateTimeFormatOptions = {
         year: "numeric",
         month: "long",
@@ -804,27 +811,27 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         hour: "numeric",
         minute: "2-digit",
         hour12: true,
-      };
-      setCurrentTime(now.toLocaleDateString("en-US", options).replace(",", ","));
-    };
-  
-    updateTime();
-    const timer = setInterval(updateTime, 1000);
-    return () => clearInterval(timer);
-  }, []);
-  
+      }
+      setCurrentTime(now.toLocaleDateString("en-US", options).replace(",", ","))
+    }
+
+    updateTime()
+    const timer = setInterval(updateTime, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
   useEffect(() => {
     return () => {
       if (avatarRef.current) {
-        avatarRef.current.closeVoiceChat();
-        avatarRef.current = null;
+        avatarRef.current.closeVoiceChat()
+        avatarRef.current = null
       }
       if (recognitionRef.current) {
-        recognitionRef.current.abort();
+        recognitionRef.current.abort()
       }
-    };
-  }, []);
-  
+    }
+  }, [])
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 text-blue-900">
       <header className="bg-blue-900 shadow-md w-full sticky top-0 z-50 transition-all duration-300">
