@@ -122,7 +122,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       }
       console.log("Successfully retrieved Google Sheet URL:", data.url)
   
-      // Attempt to open the sheet
       const sheetWindow = window.open(data.url, "_blank")
       if (!sheetWindow) {
         console.warn("Unable to open sheet automatically. It may be blocked by a popup blocker.")
@@ -169,14 +168,12 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     console.log("Speaking greeting...")
     try {
       avatarRef.current.closeVoiceChat()
-      // Call speak and wait for its promise to resolve
       await avatarRef.current.speak({
         text: "Hello! I'm June from Activate Talent, your AI HR interviewer. Are you ready to start the exam?",
         taskType: TaskType.REPEAT,
         taskMode: TaskMode.SYNC,
       })
       console.log("Waiting for avatar to finish speaking (AVATAR_STOP_TALKING event)...")
-      // Wait for the AVATAR_STOP_TALKING event to signal that speaking is truly done
       await new Promise<void>((resolve) => {
         avatarRef.current?.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
           console.log("Avatar finished speaking (event received).")
@@ -246,6 +243,12 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
             }
             const result = await response.json();
             console.log("Whisper transcript:", result.transcript);
+            // Filter out trivial transcript like "you"
+            if (result.transcript.trim().toLowerCase() === "you") {
+              console.log("Transcript 'you' detected in Whisper fallback. Restarting recognition.");
+              startVoiceRecognition(handler);
+              return;
+            }
             handler(result.transcript);
           } catch (error) {
             console.error("Error transcribing audio with Whisper:", error);
@@ -253,7 +256,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         };
   
         mediaRecorder.start();
-        // Record for a fixed duration before stopping.
         setTimeout(() => {
           if (mediaRecorder.state !== "inactive") {
             mediaRecorder.stop();
@@ -268,7 +270,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
-      // Do not start if greeting is still in progress.
       if (isGreetingRef.current) {
         console.log("Greeting is still in progress, delaying voice recognition...");
         setTimeout(() => startVoiceRecognition(handler), 500);
@@ -293,15 +294,19 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
               console.log("Sheet is open, ignoring voice input.");
               return;
             }
-            // Extra check for greeting in case it changes mid-recognition.
             if (isGreetingRef.current) {
               console.log("Greeting in progress, ignoring voice input.");
               return;
             }
             const last = event.results.length - 1;
-            const userResponse = event.results[last][0].transcript;
-            console.log(`User said: ${userResponse}`);
-            handler(userResponse);
+            const transcript = event.results[last][0].transcript.trim();
+            console.log(`User said: ${transcript}`);
+            if (transcript.toLowerCase() === "you") {
+              console.log("Transcript 'you' detected. Restarting voice recognition.");
+              startVoiceRecognition(handler);
+              return;
+            }
+            handler(transcript);
           };
     
           recognitionRef.current.onerror = (event: any) => {
@@ -311,7 +316,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           recognitionRef.current.onend = () => {
             console.log("Voice recognition ended");
             setIsRecognitionActive(false);
-            // Only restart if not during greeting.
             if (
               examStage === "additionalQuestion1" ||
               examStage === "additionalQuestion2" ||
@@ -690,14 +694,12 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         });
       });
   
-      // In the stop-talking event, restart voice recognition only if not during greeting.
       avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
         console.log("Avatar stopped talking");
         if (avatarRef.current) {
           if (!isGreeting && examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
             avatarRef.current.closeVoiceChat();
             console.log("Avatar stopped talking and voice chat closed");
-            // Only start voice recognition if greeting is not in progress.
             if (!isGreetingRef.current) {
               startVoiceRecognition(handleInitialResponse);
             }
@@ -728,7 +730,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       console.log("Waiting a short delay to stabilize stream...");
       await new Promise((resolve) => setTimeout(resolve, 1200));
   
-      // Remove any extra call here; we will start voice recognition only after greeting.
+      // Do not auto-start recognition here; let the video callback handle it.
     } catch (error) {
       console.log(`Error during avatar initialization: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -747,7 +749,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   ]);
   
   useEffect(() => {
-    // Auto-start the session on component mount.
     startSession();
   }, [startSession]);
   
@@ -858,14 +859,11 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                           el.srcObject = stream;
                           el.onloadedmetadata = () => {
                             console.log("Video metadata loaded. Avatar should be visible now.");
-                            // Start greeting only if exam has not started.
                             if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-                              // Stop any ongoing recognition and begin greeting.
                               stopVoiceRecognition();
                               setIsGreeting(true);
                               speakGreeting().then(() => {
                                 setIsGreeting(false);
-                                // Now that greeting is done, start voice recognition.
                                 startVoiceRecognition(handleInitialResponse);
                               });
                             }
