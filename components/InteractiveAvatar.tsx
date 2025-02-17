@@ -59,17 +59,20 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   const [isExamInProgress, setIsExamInProgress] = useState(false)
   const [isFullScreen, setIsFullScreen] = useState(false)
   const [isCreatingSheet, setIsCreatingSheet] = useState(false) // Added state for sheet creation
+  const [isInitializing, setIsInitializing] = useState(false)
+  const [sheetError, setSheetError] = useState<string | null>(null)
+
   const avatarRef = useRef<StreamingAvatar | null>(null)
   const recognitionRef = useRef<any>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const [initialSheetData, setInitialSheetData] = useState<any>(null)
   const [examResult, setExamResult] = useState<ExamResult | null>(null)
   const [isGreeting, setIsGreeting] = useState(false)
   const [followUpQuestion, setFollowUpQuestion] = useState<string | null>(null)
   const [followUpResponse, setFollowUpResponse] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState<string>("")
-  const [isInitializing, setIsInitializing] = useState(false)
-  const [sheetError, setSheetError] = useState<string | null>(null)
-  // Use a ref to track if the greeting has already been spoken.
+
+  // Track if greeting has already been spoken.
   const hasGreetedRef = useRef(false)
   const isGreetingRef = useRef(isGreeting)
   useEffect(() => {
@@ -187,63 +190,141 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     }
   }, [])
 
-  const startVoiceRecognition = useCallback(
-    (handler: (response: string) => void) => {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      if (SpeechRecognition) {
-        recognitionRef.current = new SpeechRecognition()
-        recognitionRef.current.continuous = false
-        recognitionRef.current.interimResults = false
+  // --- Fallback Helpers for Voice Recognition ---
 
-        recognitionRef.current.onstart = () => {
-          console.log("Voice recognition started")
+  // Determine if we need to fallback (e.g. iOS or Safari)
+  const shouldFallbackToWhisper = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+    return !SpeechRecognition || isIOS || isSafari
+  }, [])
+
+  // Use MediaRecorder to capture audio and send to Whisper API for transcription.
+  const startWhisperRecognition = useCallback(
+    async (handler: (response: string) => void) => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const options = { mimeType: 'audio/webm' } // Adjust as needed.
+        const mediaRecorder = new MediaRecorder(stream, options)
+        mediaRecorderRef.current = mediaRecorder
+        const chunks: BlobPart[] = []
+
+        mediaRecorder.onstart = () => {
+          console.log("MediaRecorder started recording for Whisper fallback.")
           setIsRecognitionActive(true)
         }
 
-        recognitionRef.current.onresult = (event: any) => {
-          if (sheetOpenRef.current) {
-            console.log("Sheet is open, ignoring voice input.")
-            return
+        mediaRecorder.ondataavailable = (event: BlobEvent) => {
+          if (event.data.size > 0) {
+            chunks.push(event.data)
           }
-          if (isGreetingRef.current) {
-            console.log("Greeting in progress, ignoring voice input.")
-            return
-          }
-          const last = event.results.length - 1
-          const userResponse = event.results[last][0].transcript
-          console.log(`User said: ${userResponse}`)
-          handler(userResponse)
         }
 
-        recognitionRef.current.onerror = (event: any) => {
-          console.log(`Speech recognition error: ${event.error}`)
-        }
-
-        recognitionRef.current.onend = () => {
-          console.log("Voice recognition ended")
+        mediaRecorder.onstop = async () => {
+          console.log("MediaRecorder stopped recording.")
           setIsRecognitionActive(false)
-          if (
-            examStage === "additionalQuestion1" ||
-            examStage === "additionalQuestion2" ||
-            examStage === "followUpQuestion"
-          ) {
-            startVoiceRecognition(handler)
+          const audioBlob = new Blob(chunks, { type: "audio/webm" })
+          const formData = new FormData()
+          formData.append("audio", audioBlob, "recording.webm")
+          try {
+            const response = await fetch("/api/transcribe-whisper", {
+              method: "POST",
+              body: formData,
+            })
+            if (!response.ok) {
+              throw new Error(`Whisper transcription failed: ${response.statusText}`)
+            }
+            const result = await response.json()
+            console.log("Whisper transcript:", result.transcript)
+            handler(result.transcript)
+          } catch (error) {
+            console.error("Error transcribing audio with Whisper:", error)
           }
         }
 
-        recognitionRef.current.start()
-      } else {
-        console.log("Speech Recognition API is not supported in this browser")
-        //implement a fallback method or show a message to the user
+        mediaRecorder.start()
+        // Record for a fixed duration (e.g., 5 seconds) before stopping.
+        setTimeout(() => {
+          if (mediaRecorder.state !== "inactive") {
+            mediaRecorder.stop()
+          }
+        }, 5000)
+      } catch (error) {
+        console.error("Error in MediaRecorder fallback:", error)
       }
     },
-    [examStage],
+    []
   )
 
+  // Main startVoiceRecognition function – choose between Web Speech API or Whisper fallback.
+  const startVoiceRecognition = useCallback(
+    (handler: (response: string) => void) => {
+      if (!shouldFallbackToWhisper()) {
+        console.log("Using Web Speech API for voice recognition.")
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        if (SpeechRecognition) {
+          recognitionRef.current = new SpeechRecognition()
+          recognitionRef.current.continuous = false
+          recognitionRef.current.interimResults = false
+
+          recognitionRef.current.onstart = () => {
+            console.log("Voice recognition started")
+            setIsRecognitionActive(true)
+          }
+
+          recognitionRef.current.onresult = (event: any) => {
+            if (sheetOpenRef.current) {
+              console.log("Sheet is open, ignoring voice input.")
+              return
+            }
+            if (isGreetingRef.current) {
+              console.log("Greeting in progress, ignoring voice input.")
+              return
+            }
+            const last = event.results.length - 1
+            const userResponse = event.results[last][0].transcript
+            console.log(`User said: ${userResponse}`)
+            handler(userResponse)
+          }
+
+          recognitionRef.current.onerror = (event: any) => {
+            console.log(`Speech recognition error: ${event.error}`)
+          }
+
+          recognitionRef.current.onend = () => {
+            console.log("Voice recognition ended")
+            setIsRecognitionActive(false)
+            if (
+              examStage === "additionalQuestion1" ||
+              examStage === "additionalQuestion2" ||
+              examStage === "followUpQuestion"
+            ) {
+              startVoiceRecognition(handler)
+            }
+          }
+
+          recognitionRef.current.start()
+        }
+      } else {
+        console.log("Falling back to Whisper via MediaRecorder.")
+        startWhisperRecognition(handler)
+      }
+    },
+    [shouldFallbackToWhisper, examStage, startWhisperRecognition]
+  )
+
+  // Updated stopVoiceRecognition to stop either mechanism.
   const stopVoiceRecognition = useCallback(() => {
     if (recognitionRef.current) {
       recognitionRef.current.stop()
       console.log("Voice recognition stopped")
+    }
+    if (mediaRecorderRef.current) {
+      if (mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop()
+        console.log("MediaRecorder stopped.")
+      }
     }
   }, [])
 
@@ -310,7 +391,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         finishInterview()
       }
     },
-    [startVoiceRecognition, finishInterview],
+    [startVoiceRecognition, finishInterview]
   )
 
   const handleFollowUpResponse = useCallback(
@@ -320,7 +401,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       setIsSheetOpen(false)
       finishInterview()
     },
-    [finishInterview],
+    [finishInterview]
   )
 
   const handleHourlyRateResponse = useCallback(
@@ -340,7 +421,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         })
       }
     },
-    [startVoiceRecognition, handleSuccessfulCampaignResponse],
+    [startVoiceRecognition, handleSuccessfulCampaignResponse]
   )
 
   const askAdditionalQuestion = useCallback(async () => {
@@ -451,7 +532,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         startVoiceRecognition(handleVoiceSubmission)
       }
     },
-    [handleSubmitExam, startVoiceRecognition],
+    [handleSubmitExam, startVoiceRecognition]
   )
 
   const openVoiceInput = useCallback(() => {
@@ -557,7 +638,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         console.log(`Error in handleInitialResponse: ${error instanceof Error ? error.message : String(error)}`)
       }
     },
-    [startExam, onReturnToLanding, pauseVoiceRecognition, examStage],
+    [startExam, onReturnToLanding, pauseVoiceRecognition, examStage]
   )
 
   const hasInitializedRef = useRef(false)
@@ -628,12 +709,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
       console.log("Waiting a short delay to stabilize stream...")
       await new Promise((resolve) => setTimeout(resolve, 1200))
-
-      // console.log("Stream is fully ready, now speaking greeting...");
-      // setIsGreeting(true);
-      // avatarRef.current.closeVoiceChat();
-      // await speakGreeting();
-      // setIsGreeting(false);
 
       // Only start voice recognition after the greeting is complete.
       if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
@@ -817,7 +892,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
             >
               {(examStage === "inProgress" || examStage === "verifying") && sheetUrl && (
                 <div className="h-full relative">
-                  {" "}
                   {/* Added relative to position loading indicator */}
                   {isCreatingSheet && (
                     <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 z-50">
@@ -910,4 +984,3 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     </div>
   )
 }
-
