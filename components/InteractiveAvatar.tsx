@@ -204,58 +204,70 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   const startWhisperRecognition = useCallback(
     async (handler: (response: string) => void) => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        const options = { mimeType: 'audio/webm' } // Adjust as needed.
-        const mediaRecorder = new MediaRecorder(stream, options)
-        mediaRecorderRef.current = mediaRecorder
-        const chunks: BlobPart[] = []
-
-        mediaRecorder.onstart = () => {
-          console.log("MediaRecorder started recording for Whisper fallback.")
-          setIsRecognitionActive(true)
-        }
-
-        mediaRecorder.ondataavailable = (event: BlobEvent) => {
-          if (event.data.size > 0) {
-            chunks.push(event.data)
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Determine a supported MIME type:
+        let options: MediaRecorderOptions = {};
+        if (typeof MediaRecorder.isTypeSupported === "function") {
+          if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+            options.mimeType = "audio/webm;codecs=opus";
+          } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+            options.mimeType = "audio/webm";
+          } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+            options.mimeType = "audio/mp4";
+          } else {
+            console.warn("No preferred MIME type supported, using default settings.");
           }
         }
-
+        const mediaRecorder = new MediaRecorder(stream, options);
+        mediaRecorderRef.current = mediaRecorder;
+        const chunks: BlobPart[] = [];
+  
+        mediaRecorder.onstart = () => {
+          console.log("MediaRecorder started recording for Whisper fallback.");
+          setIsRecognitionActive(true);
+        };
+  
+        mediaRecorder.ondataavailable = (event: BlobEvent) => {
+          if (event.data.size > 0) {
+            chunks.push(event.data);
+          }
+        };
+  
         mediaRecorder.onstop = async () => {
-          console.log("MediaRecorder stopped recording.")
-          setIsRecognitionActive(false)
-          const audioBlob = new Blob(chunks, { type: "audio/webm" })
-          const formData = new FormData()
-          formData.append("audio", audioBlob, "recording.webm")
+          console.log("MediaRecorder stopped recording.");
+          setIsRecognitionActive(false);
+          const audioBlob = new Blob(chunks, { type: options.mimeType || "audio/webm" });
+          const formData = new FormData();
+          formData.append("audio", audioBlob, "recording." + (options.mimeType?.includes("mp4") ? "mp4" : "webm"));
           try {
             const response = await fetch("/api/transcribe-whisper", {
               method: "POST",
               body: formData,
-            })
+            });
             if (!response.ok) {
-              throw new Error(`Whisper transcription failed: ${response.statusText}`)
+              throw new Error(`Whisper transcription failed: ${response.statusText}`);
             }
-            const result = await response.json()
-            console.log("Whisper transcript:", result.transcript)
-            handler(result.transcript)
+            const result = await response.json();
+            console.log("Whisper transcript:", result.transcript);
+            handler(result.transcript);
           } catch (error) {
-            console.error("Error transcribing audio with Whisper:", error)
+            console.error("Error transcribing audio with Whisper:", error);
           }
-        }
-
-        mediaRecorder.start()
+        };
+  
+        mediaRecorder.start();
         // Record for a fixed duration (e.g., 5 seconds) before stopping.
         setTimeout(() => {
           if (mediaRecorder.state !== "inactive") {
-            mediaRecorder.stop()
+            mediaRecorder.stop();
           }
-        }, 5000)
+        }, 5000);
       } catch (error) {
-        console.error("Error in MediaRecorder fallback:", error)
+        console.error("Error in MediaRecorder fallback:", error);
       }
     },
     []
-  )
+  );
 
   // Main startVoiceRecognition function – choose between Web Speech API or Whisper fallback.
   const startVoiceRecognition = useCallback(
