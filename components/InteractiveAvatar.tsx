@@ -58,6 +58,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   const [isExamStarted, setIsExamStarted] = useState(false)
   const [isExamInProgress, setIsExamInProgress] = useState(false)
   const [isFullScreen, setIsFullScreen] = useState(false)
+  const [isCreatingSheet, setIsCreatingSheet] = useState(false) // Added state for sheet creation
   const avatarRef = useRef<StreamingAvatar | null>(null)
   const recognitionRef = useRef<any>(null)
   const [initialSheetData, setInitialSheetData] = useState<any>(null)
@@ -102,7 +103,13 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   const fetchSheetUrl = useCallback(async () => {
     try {
       console.log("Fetching Google Sheet URL...")
-      const response = await fetch("/api/get-sheet-url")
+      const response = await fetch("/api/get-sheet-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: candidateInfo?.name }),
+      })
       if (!response.ok) {
         throw new Error(`Failed to fetch sheet URL: ${response.statusText}`)
       }
@@ -110,13 +117,21 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       if (!data.url) {
         throw new Error("No sheet URL received in response")
       }
-      console.log("Successfully retrieved Google Sheet URL")
+      console.log("Successfully retrieved Google Sheet URL:", data.url)
+
+      // Attempt to open the sheet
+      const sheetWindow = window.open(data.url, "_blank")
+      if (!sheetWindow) {
+        console.warn("Unable to open sheet automatically. It may be blocked by a popup blocker.")
+      }
+
       return data.url
     } catch (error) {
-      console.log(`Error fetching sheet URL: ${error instanceof Error ? error.message : "Unknown error occurred"}`)
+      console.error(`Error fetching sheet URL: ${error instanceof Error ? error.message : "Unknown error occurred"}`)
+      setSheetError(`Failed to create exam sheet: ${error instanceof Error ? error.message : "Unknown error"}`)
       return null
     }
-  }, [])
+  }, [candidateInfo])
 
   const fetchSheetData = useCallback(async () => {
     if (!sheetUrl) {
@@ -452,39 +467,37 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     pauseVoiceRecognition()
     setIsExamStarted(true)
     setIsExamInProgress(true)
-    setSheetError(null) // Reset any previous errors
-    try {
-      if (!sheetUrl) {
-        const response = await fetch("/api/get-sheet-url")
-        if (!response.ok) {
-          throw new Error("Failed to fetch sheet data")
-        }
-        const { url, data } = await response.json()
+    setSheetError(null)
+    setIsCreatingSheet(true) // Set this to true when starting sheet creation
 
-        if (url && data) {
-          setSheetUrl(url)
-          setInitialSheetData(data)
-          setExamStage("inProgress")
-          setIsSheetOpen(true)
-          setIsAvatarCentered(false)
-          setIsVoiceInputActive(false)
-          console.log("Exam started successfully")
-        } else {
-          throw new Error("Missing URL or data in response")
+    try {
+      const url = await fetchSheetUrl()
+      if (!url) {
+        throw new Error("Failed to fetch sheet data")
+      }
+
+      setSheetUrl(url)
+      setExamStage("inProgress")
+      setIsSheetOpen(true)
+      setIsAvatarCentered(false)
+      setIsVoiceInputActive(false)
+      console.log("Exam started successfully")
+
+      // Attempt to open the sheet
+      if (!document.hidden) {
+        const sheetWindow = window.open(url, "_blank")
+        if (!sheetWindow) {
+          console.warn("Unable to open sheet automatically. It may be blocked by a popup blocker.")
         }
-      } else {
-        console.log("Sheet URL already exists, skipping fetch")
-        setExamStage("inProgress")
-        setIsSheetOpen(true)
-        setIsAvatarCentered(false)
-        setIsVoiceInputActive(false)
       }
     } catch (error) {
       setExamStage("notStarted")
       setSheetError("Failed to load the exam sheet. Please try again.")
-      console.log(`Failed to start exam: ${error instanceof Error ? error.message : "Unknown error"}`)
+      console.error(`Failed to start exam: ${error instanceof Error ? error.message : "Unknown error"}`)
+    } finally {
+      setIsCreatingSheet(false) // Set this to false when sheet creation is complete
     }
-  }, [pauseVoiceRecognition, sheetUrl])
+  }, [pauseVoiceRecognition, fetchSheetUrl])
 
   const handleInitialResponse = useCallback(
     async (userResponse: string) => {
@@ -636,7 +649,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     fetchAccessToken,
     startVoiceRecognition,
     handleInitialResponse,
-    speakGreeting,
     examStage,
     isExamStarted,
     isExamInProgress,
@@ -804,7 +816,17 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
               transition={{ duration: 0.5 }}
             >
               {(examStage === "inProgress" || examStage === "verifying") && sheetUrl && (
-                <div className="h-full">
+                <div className="h-full relative">
+                  {" "}
+                  {/* Added relative to position loading indicator */}
+                  {isCreatingSheet && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 z-50">
+                      <div className="flex flex-col items-center">
+                        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                        <p className="mt-4 text-lg font-semibold text-blue-600">Creating your exam sheet...</p>
+                      </div>
+                    </div>
+                  )}
                   {isSubmitting ? (
                     <Card className="w-full h-full bg-white shadow-2xl border-4 border-blue-200">
                       <CardContent className="flex items-center justify-center h-full">
