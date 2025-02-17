@@ -272,60 +272,69 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   // Main startVoiceRecognition function – choose between Web Speech API or Whisper fallback.
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
+      // If the greeting is still in progress, delay starting recognition.
+      if (isGreetingRef.current) {
+        console.log("Greeting is still in progress, delaying voice recognition...");
+        setTimeout(() => startVoiceRecognition(handler), 500);
+        return;
+      }
+      
       if (!shouldFallbackToWhisper()) {
-        console.log("Using Web Speech API for voice recognition.")
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        console.log("Using Web Speech API for voice recognition.");
+        const SpeechRecognition =
+          (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (SpeechRecognition) {
-          recognitionRef.current = new SpeechRecognition()
-          recognitionRef.current.continuous = false
-          recognitionRef.current.interimResults = false
-
+          recognitionRef.current = new SpeechRecognition();
+          recognitionRef.current.continuous = false;
+          recognitionRef.current.interimResults = false;
+    
           recognitionRef.current.onstart = () => {
-            console.log("Voice recognition started")
-            setIsRecognitionActive(true)
-          }
-
+            console.log("Voice recognition started");
+            setIsRecognitionActive(true);
+          };
+    
           recognitionRef.current.onresult = (event: any) => {
             if (sheetOpenRef.current) {
-              console.log("Sheet is open, ignoring voice input.")
-              return
+              console.log("Sheet is open, ignoring voice input.");
+              return;
             }
+            // Although we check for greeting here, the earlier check should
+            // already prevent this branch from starting during the greeting.
             if (isGreetingRef.current) {
-              console.log("Greeting in progress, ignoring voice input.")
-              return
+              console.log("Greeting in progress, ignoring voice input.");
+              return;
             }
-            const last = event.results.length - 1
-            const userResponse = event.results[last][0].transcript
-            console.log(`User said: ${userResponse}`)
-            handler(userResponse)
-          }
-
+            const last = event.results.length - 1;
+            const userResponse = event.results[last][0].transcript;
+            console.log(`User said: ${userResponse}`);
+            handler(userResponse);
+          };
+    
           recognitionRef.current.onerror = (event: any) => {
-            console.log(`Speech recognition error: ${event.error}`)
-          }
-
+            console.log(`Speech recognition error: ${event.error}`);
+          };
+    
           recognitionRef.current.onend = () => {
-            console.log("Voice recognition ended")
-            setIsRecognitionActive(false)
+            console.log("Voice recognition ended");
+            setIsRecognitionActive(false);
             if (
               examStage === "additionalQuestion1" ||
               examStage === "additionalQuestion2" ||
               examStage === "followUpQuestion"
             ) {
-              startVoiceRecognition(handler)
+              startVoiceRecognition(handler);
             }
-          }
-
-          recognitionRef.current.start()
+          };
+    
+          recognitionRef.current.start();
         }
       } else {
-        console.log("Falling back to Whisper via MediaRecorder.")
-        startWhisperRecognition(handler)
+        console.log("Falling back to Whisper via MediaRecorder.");
+        startWhisperRecognition(handler);
       }
     },
     [shouldFallbackToWhisper, examStage, startWhisperRecognition]
-  )
-
+  );
   // Updated stopVoiceRecognition to stop either mechanism.
   const stopVoiceRecognition = useCallback(() => {
     if (recognitionRef.current) {
