@@ -15,6 +15,8 @@ import { CheckIcon, XIcon, Bot, RefreshCw } from "lucide-react"
 import { motion } from "framer-motion"
 import LoadingCountdown from "./LoadingCountdown"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import Recorder from "recorder-js";
+
 
 interface InteractiveAvatarProps {
   onReturnToLanding: () => void
@@ -194,86 +196,65 @@ export default function InteractiveAvatar({
     }
   }, [])
 
-  // Fallback: Record audio via MediaRecorder and transcribe with Whisper.
-  const startFallbackVoiceRecognition = useCallback((handler: (response: string) => void) => {
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then((stream) => {
-        let options: MediaRecorderOptions = {};
-        // Try a couple of MIME types that OpenAI supports.
-        if (MediaRecorder.isTypeSupported("audio/ogg; codecs=opus")) {
-          options.mimeType = "audio/ogg; codecs=opus";
-        } else if (MediaRecorder.isTypeSupported("audio/webm; codecs=opus")) {
-          options.mimeType = "audio/webm; codecs=opus";
-        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
-          options.mimeType = "audio/webm";
-        } else {
-          console.log("No preferred MIME type supported; using default.");
-        }
-        
-        console.log("Attempting to use MIME type:", options.mimeType || "default");
+  const recorderRef = useRef<Recorder | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   
-        let mediaRecorder: MediaRecorder;
-        try {
-          mediaRecorder = new MediaRecorder(stream, options);
-        } catch (error) {
-          console.error("MediaRecorder constructor error:", error);
-          // Fallback: create without options if the preferred type isn't supported.
-          mediaRecorder = new MediaRecorder(stream);
-        }
+  const startFallbackVoiceRecognition = useCallback(
+    (handler: (response: string) => void) => {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(async (stream) => {
+          // Create an AudioContext
+          const audioContext = new AudioContext();
+          audioContextRef.current = audioContext;
+          
+          // Initialize recorder-js with the AudioContext and stream
+          const recorder = new Recorder(audioContext, {
+            // Optional: you can adjust configuration here.
+            // For example: numberOfChannels: 1,
+          });
+          recorderRef.current = recorder;
+          recorder.init(stream);
+          
+          console.log("WAV recording started using recorder-js.");
+          recorder.start();
+          
+          // Record for 10 seconds (adjust as needed)
+          setTimeout(async () => {
+            const { blob } = await recorder.stop();
+            console.log("WAV recording stopped. Blob size:", blob.size);
+            
+            // Create FormData to send the WAV file.
+            const formData = new FormData();
+            // Use a .wav extension.
+            formData.append("audio", blob, "recording.wav");
   
-        const audioChunks: Blob[] = [];
-  
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunks.push(event.data);
-          }
-        };
-  
-        mediaRecorder.onstop = async () => {
-          // Use the chosen MIME type if available, else default.
-          const mimeType = options.mimeType || "audio/webm";
-          const audioBlob = new Blob(audioChunks, { type: mimeType });
-          console.log("Fallback audio blob ready. Size:", audioBlob.size);
-  
-          // Determine the appropriate file extension.
-          const fileExtension = mimeType.startsWith("audio/ogg") ? "ogg" : "webm";
-          const formData = new FormData();
-          formData.append("audio", audioBlob, `recording.${fileExtension}`);
-  
-          try {
-            const response = await fetch("/api/transcribe-whisper", {
-              method: "POST",
-              body: formData,
-            });
-  
-            if (!response.ok) {
-              const errData = await response.json();
-              console.error("Error from Whisper API:", errData);
-              throw new Error(`transcription failed`);
+            try {
+              const response = await fetch("/api/transcribe-whisper", {
+                method: "POST",
+                body: formData,
+              });
+    
+              if (!response.ok) {
+                const errData = await response.json();
+                console.error("Error from Whisper API:", errData);
+                throw new Error(`transcription failed`);
+              }
+    
+              const data = await response.json();
+              const transcript = data.transcript;
+              console.log("Whisper transcription result:", transcript);
+              handler(transcript);
+            } catch (error) {
+              console.error("Error transcribing with Whisper:", error);
             }
-  
-            const data = await response.json();
-            const transcript = data.transcript;
-            console.log("Whisper transcription result:", transcript);
-            handler(transcript);
-          } catch (error) {
-            console.error("Error transcribing with Whisper:", error);
-          }
-        };
-  
-        // Increase duration if needed; here we record for 10 seconds.
-        mediaRecorder.start();
-        console.log("Fallback recording started");
-        setTimeout(() => {
-          mediaRecorder.stop();
-          console.log("Fallback recording stopped");
-        }, 10000);
-      })
-      .catch((error) => {
-        console.error("Error accessing microphone for fallback:", error);
-      });
-  }, []);
-  
+          }, 10000);
+        })
+        .catch((error) => {
+          console.error("Error accessing microphone for fallback:", error);
+        });
+    },
+    []
+  );
   
 
   // Use native SpeechRecognition if available; otherwise, fall back.
