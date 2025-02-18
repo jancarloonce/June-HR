@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.1.9",
+    "@google-cloud/speech": "^6.7.0",
     "@heygen/streaming-avatar": "^2.0.9",
     "@hookform/resolvers": "^3.9.1",
     "@nextui-org/react": "latest",

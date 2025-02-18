@@ -201,9 +201,10 @@ export default function InteractiveAvatar({
   
   const startFallbackVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
+      // Optional: if you want a delay, e.g. a "get ready" message, you can add it here.
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(async (stream) => {
-          // Create AudioContext and Recorder instance
+          // Create an AudioContext and initialize recorder-js.
           const audioContext = new AudioContext();
           audioContextRef.current = audioContext;
           const recorder = new Recorder(audioContext);
@@ -213,41 +214,42 @@ export default function InteractiveAvatar({
           console.log("WAV recording started using recorder-js.");
           recorder.start();
   
-          // Increase recording duration to 15 seconds for testing.
+          // Record for, say, 15 seconds (adjust as needed)
           setTimeout(async () => {
             const { blob } = await recorder.stop();
             console.log("WAV recording stopped. Blob size:", blob.size);
-            
-            // (Optional) Create an audio element to play back the recording for debugging.
+  
+            // (Optional) Debug playback element
             const audioUrl = URL.createObjectURL(blob);
             const audioEl = document.createElement("audio");
             audioEl.src = audioUrl;
             audioEl.controls = true;
             document.body.appendChild(audioEl);
-            console.log("Playback element added. Please check if the audio sounds correct.");
+            console.log("Playback element added for debugging.");
   
-            // Create FormData to send the WAV file.
+            // Create FormData with the WAV file.
             const formData = new FormData();
             formData.append("audio", blob, "recording.wav");
   
             try {
-              const response = await fetch("/api/transcribe-whisper", {
+              // Change the endpoint from whisper to Google Cloud
+              const response = await fetch("/api/transcribe-google", {
                 method: "POST",
                 body: formData,
               });
     
               if (!response.ok) {
                 const errData = await response.json();
-                console.error("Error from Whisper API:", errData);
+                console.error("Error from Google Speech API:", errData);
                 throw new Error(`transcription failed`);
               }
     
               const data = await response.json();
               const transcript = data.transcript;
-              console.log("Whisper transcription result:", transcript);
+              console.log("Google Speech transcription result:", transcript);
               handler(transcript);
             } catch (error) {
-              console.error("Error transcribing with Whisper:", error);
+              console.error("Error transcribing with Google Speech API:", error);
             }
           }, 15000); // record for 15 seconds
         })
