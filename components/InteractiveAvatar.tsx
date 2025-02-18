@@ -801,6 +801,10 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                     </div>
                   )}
                 </div>
+                {/* Added mic button for user gesture */}
+                <Button onClick={openVoiceInput} disabled={isVoiceInputActive} className="mt-2">
+                  {isVoiceInputActive ? "Mic Active" : "Open Mic"}
+                </Button>
                 {isLoading && (
                   <div className="w-full text-center py-4 text-blue-600">Starting interview session...</div>
                 )}
