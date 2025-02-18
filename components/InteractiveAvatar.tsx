@@ -203,29 +203,31 @@ export default function InteractiveAvatar({
     (handler: (response: string) => void) => {
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(async (stream) => {
-          // Create an AudioContext
+          // Create AudioContext and Recorder instance
           const audioContext = new AudioContext();
           audioContextRef.current = audioContext;
-          
-          // Initialize recorder-js with the AudioContext and stream
-          const recorder = new Recorder(audioContext, {
-            // Optional: you can adjust configuration here.
-            // For example: numberOfChannels: 1,
-          });
+          const recorder = new Recorder(audioContext);
           recorderRef.current = recorder;
-          recorder.init(stream);
-          
+          await recorder.init(stream);
+  
           console.log("WAV recording started using recorder-js.");
           recorder.start();
-          
-          // Record for 10 seconds (adjust as needed)
+  
+          // Increase recording duration to 15 seconds for testing.
           setTimeout(async () => {
             const { blob } = await recorder.stop();
             console.log("WAV recording stopped. Blob size:", blob.size);
             
+            // (Optional) Create an audio element to play back the recording for debugging.
+            const audioUrl = URL.createObjectURL(blob);
+            const audioEl = document.createElement("audio");
+            audioEl.src = audioUrl;
+            audioEl.controls = true;
+            document.body.appendChild(audioEl);
+            console.log("Playback element added. Please check if the audio sounds correct.");
+  
             // Create FormData to send the WAV file.
             const formData = new FormData();
-            // Use a .wav extension.
             formData.append("audio", blob, "recording.wav");
   
             try {
@@ -247,7 +249,7 @@ export default function InteractiveAvatar({
             } catch (error) {
               console.error("Error transcribing with Whisper:", error);
             }
-          }, 10000);
+          }, 15000); // record for 15 seconds
         })
         .catch((error) => {
           console.error("Error accessing microphone for fallback:", error);
