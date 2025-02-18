@@ -46,7 +46,6 @@ export async function POST(request: Request) {
       console.error("Error from OpenAI API:", data);
       return NextResponse.json({ error: data }, { status: response.status });
     }
-
     // Return the transcript (usually in data.text).
     return NextResponse.json({ transcript: data.text });
   } catch (error) {

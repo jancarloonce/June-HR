@@ -200,52 +200,58 @@ export default function InteractiveAvatar({
       .then((stream) => {
         const mediaRecorder = new MediaRecorder(stream)
         const audioChunks: Blob[] = []
-
+  
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
             audioChunks.push(event.data)
           }
         }
-
+  
         mediaRecorder.onstop = async () => {
           const audioBlob = new Blob(audioChunks, { type: "audio/webm" })
-          console.log("Fallback audio blob ready", audioBlob)
-
-          // Prepare form data to send to your transcription endpoint.
-          const formData = new FormData()
-          formData.append("audio", audioBlob, "recording.webm") // note: key must be "audio"
-
+          console.log("Fallback audio blob ready. Size:", audioBlob.size)
+          // (Optional) Create an audio element to test playback:
+          // const url = URL.createObjectURL(audioBlob);
+          // const audioEl = new Audio(url);
+          // audioEl.play();
+  
+          const formData = new FormData();
+          formData.append("audio", audioBlob, "recording.webm");
+  
           try {
             const response = await fetch("/api/transcribe-whisper", {
               method: "POST",
               body: formData,
-            })
-
+            });
+  
             if (!response.ok) {
-              throw new Error(`Transcription failed: ${response.statusText}`)
+              const errData = await response.json();
+              console.error("Error from Whisper API:", errData);
+              throw new Error(`transcription failed`);
             }
-
-            const data = await response.json()
-            const transcript = data.transcript
-            console.log("Whisper transcription result:", transcript)
-            handler(transcript)
+  
+            const data = await response.json();
+            const transcript = data.transcript;
+            console.log("Whisper transcription result:", transcript);
+            handler(transcript);
           } catch (error) {
-            console.error("Error transcribing with Whisper:", error)
+            console.error("Error transcribing with Whisper:", error);
           }
-        }
-
-        // Start recording and stop automatically after 5 seconds.
-        mediaRecorder.start()
-        console.log("Fallback recording started")
+        };
+  
+        // Increase the recording duration for testing (e.g., 10 seconds)
+        mediaRecorder.start();
+        console.log("Fallback recording started");
         setTimeout(() => {
-          mediaRecorder.stop()
-          console.log("Fallback recording stopped")
-        }, 5000)
+          mediaRecorder.stop();
+          console.log("Fallback recording stopped");
+        }, 10000); // 10 seconds instead of 5
       })
       .catch((error) => {
-        console.error("Error accessing microphone for fallback:", error)
-      })
-  }, [])
+        console.error("Error accessing microphone for fallback:", error);
+      });
+  }, []);
+  
 
   // Use native SpeechRecognition if available; otherwise, fall back.
   const startVoiceRecognition = useCallback(
