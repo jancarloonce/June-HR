@@ -255,12 +255,12 @@ export default function InteractiveAvatar({
         recognitionRef.current = new SpeechRecognition()
         recognitionRef.current.continuous = false
         recognitionRef.current.interimResults = false
-
+  
         recognitionRef.current.onstart = () => {
           console.log("Voice recognition started")
           setIsRecognitionActive(true)
         }
-
+  
         recognitionRef.current.onresult = (event: any) => {
           if (sheetOpenRef.current) {
             console.log("Sheet is open, ignoring voice input.")
@@ -275,11 +275,16 @@ export default function InteractiveAvatar({
           console.log(`User said: ${userResponse}`)
           handler(userResponse)
         }
-
+  
+        // Update the onerror handler here:
         recognitionRef.current.onerror = (event: any) => {
           console.log(`Speech recognition error: ${event.error}`)
+          if (event.error === "audio-capture") {
+            console.log("Audio capture error detected. Falling back to MediaRecorder-based transcription.")
+            startFallbackVoiceRecognition(handler)
+          }
         }
-
+  
         recognitionRef.current.onend = () => {
           console.log("Voice recognition ended")
           setIsRecognitionActive(false)
@@ -291,7 +296,7 @@ export default function InteractiveAvatar({
             startVoiceRecognition(handler)
           }
         }
-
+  
         recognitionRef.current.start()
       } else {
         console.log("SpeechRecognition not supported. Using fallback.")
