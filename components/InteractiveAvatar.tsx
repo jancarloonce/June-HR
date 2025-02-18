@@ -198,10 +198,19 @@ export default function InteractiveAvatar({
   const startFallbackVoiceRecognition = useCallback((handler: (response: string) => void) => {
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then((stream) => {
-        // Use a specific MIME type if supported.
-        const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? { mimeType: 'audio/webm;codecs=opus' }
-          : {};
+        let mimeType = "";
+        if (MediaRecorder.isTypeSupported("audio/ogg; codecs=opus")) {
+          mimeType = "audio/ogg; codecs=opus";
+        } else if (MediaRecorder.isTypeSupported("audio/webm; codecs=opus")) {
+          mimeType = "audio/webm; codecs=opus";
+        } else {
+          // Fallback to default. This may not work with OpenAI.
+          mimeType = "audio/webm";
+        }
+        
+        const options = { mimeType };
+        console.log("Using MIME type:", mimeType);
+        
         const mediaRecorder = new MediaRecorder(stream, options);
         const audioChunks: Blob[] = [];
   
@@ -212,11 +221,14 @@ export default function InteractiveAvatar({
         };
   
         mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunks, { type: options.mimeType || "audio/webm" });
+          // Use the same mime type for the blob.
+          const audioBlob = new Blob(audioChunks, { type: mimeType });
           console.log("Fallback audio blob ready. Size:", audioBlob.size);
-  
+          
+          // Use the appropriate file extension based on the mime type.
+          const fileExtension = mimeType.startsWith("audio/ogg") ? "ogg" : "webm";
           const formData = new FormData();
-          formData.append("audio", audioBlob, "recording.webm"); // key "audio" must match the API
+          formData.append("audio", audioBlob, `recording.${fileExtension}`);
   
           try {
             const response = await fetch("/api/transcribe-whisper", {
@@ -239,19 +251,18 @@ export default function InteractiveAvatar({
           }
         };
   
-        // Increase duration if needed for a proper recording.
+        // Record for 10 seconds for testing.
         mediaRecorder.start();
         console.log("Fallback recording started");
         setTimeout(() => {
           mediaRecorder.stop();
           console.log("Fallback recording stopped");
-        }, 10000); // record for 10 seconds
+        }, 10000);
       })
       .catch((error) => {
         console.error("Error accessing microphone for fallback:", error);
       });
   }, []);
-  
   
 
   // Use native SpeechRecognition if available; otherwise, fall back.
