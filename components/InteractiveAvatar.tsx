@@ -198,25 +198,25 @@ export default function InteractiveAvatar({
   const startFallbackVoiceRecognition = useCallback((handler: (response: string) => void) => {
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then((stream) => {
-        const mediaRecorder = new MediaRecorder(stream)
-        const audioChunks: Blob[] = []
+        // Use a specific MIME type if supported.
+        const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? { mimeType: 'audio/webm;codecs=opus' }
+          : {};
+        const mediaRecorder = new MediaRecorder(stream, options);
+        const audioChunks: Blob[] = [];
   
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
-            audioChunks.push(event.data)
+            audioChunks.push(event.data);
           }
-        }
+        };
   
         mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunks, { type: "audio/webm" })
-          console.log("Fallback audio blob ready. Size:", audioBlob.size)
-          // (Optional) Create an audio element to test playback:
-          // const url = URL.createObjectURL(audioBlob);
-          // const audioEl = new Audio(url);
-          // audioEl.play();
+          const audioBlob = new Blob(audioChunks, { type: options.mimeType || "audio/webm" });
+          console.log("Fallback audio blob ready. Size:", audioBlob.size);
   
           const formData = new FormData();
-          formData.append("audio", audioBlob, "recording.webm");
+          formData.append("audio", audioBlob, "recording.webm"); // key "audio" must match the API
   
           try {
             const response = await fetch("/api/transcribe-whisper", {
@@ -239,18 +239,19 @@ export default function InteractiveAvatar({
           }
         };
   
-        // Increase the recording duration for testing (e.g., 10 seconds)
+        // Increase duration if needed for a proper recording.
         mediaRecorder.start();
         console.log("Fallback recording started");
         setTimeout(() => {
           mediaRecorder.stop();
           console.log("Fallback recording stopped");
-        }, 10000); // 10 seconds instead of 5
+        }, 10000); // record for 10 seconds
       })
       .catch((error) => {
         console.error("Error accessing microphone for fallback:", error);
       });
   }, []);
+  
   
 
   // Use native SpeechRecognition if available; otherwise, fall back.
