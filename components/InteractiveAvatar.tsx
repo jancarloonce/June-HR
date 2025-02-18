@@ -250,61 +250,70 @@ export default function InteractiveAvatar({
   // Use native SpeechRecognition if available; otherwise, fall back.
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      // Force fallback on Mac/iOS devices:
+      const isMacOrIOS = /Macintosh|iPhone|iPad/i.test(navigator.userAgent);
+      if (isMacOrIOS) {
+        console.log("Detected Mac/iOS. Forcing fallback to MediaRecorder + Whisper.");
+        startFallbackVoiceRecognition(handler);
+        return;
+      }
+  
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
-        recognitionRef.current = new SpeechRecognition()
-        recognitionRef.current.continuous = false
-        recognitionRef.current.interimResults = false
+        recognitionRef.current = new SpeechRecognition();
+        recognitionRef.current.continuous = false;
+        recognitionRef.current.interimResults = false;
   
         recognitionRef.current.onstart = () => {
-          console.log("Voice recognition started")
-          setIsRecognitionActive(true)
-        }
+          console.log("Voice recognition started");
+          setIsRecognitionActive(true);
+        };
   
         recognitionRef.current.onresult = (event: any) => {
           if (sheetOpenRef.current) {
-            console.log("Sheet is open, ignoring voice input.")
-            return
+            console.log("Sheet is open, ignoring voice input.");
+            return;
           }
           if (isGreetingRef.current) {
-            console.log("Greeting in progress, ignoring voice input.")
-            return
+            console.log("Greeting in progress, ignoring voice input.");
+            return;
           }
-          const last = event.results.length - 1
-          const userResponse = event.results[last][0].transcript
-          console.log(`User said: ${userResponse}`)
-          handler(userResponse)
-        }
+          const last = event.results.length - 1;
+          const userResponse = event.results[last][0].transcript;
+          console.log(`User said: ${userResponse}`);
+          handler(userResponse);
+        };
   
-        // Update the onerror handler here:
         recognitionRef.current.onerror = (event: any) => {
-          console.log(`Speech recognition error: ${event.error}`)
-          if (event.error === "audio-capture") {
-            console.log("Audio capture error detected. Falling back to MediaRecorder-based transcription.")
-            startFallbackVoiceRecognition(handler)
+          console.log(`Speech recognition error: ${event.error}`);
+          // Optionally, you can also trigger fallback on error:
+          if (event.error === "audio-capture" || event.error === "aborted") {
+            console.log("Falling back to MediaRecorder-based transcription.");
+            startFallbackVoiceRecognition(handler);
           }
-        }
+        };
   
         recognitionRef.current.onend = () => {
-          console.log("Voice recognition ended")
-          setIsRecognitionActive(false)
+          console.log("Voice recognition ended");
+          setIsRecognitionActive(false);
           if (
             examStage === "additionalQuestion1" ||
             examStage === "additionalQuestion2" ||
             examStage === "followUpQuestion"
           ) {
-            startVoiceRecognition(handler)
+            startVoiceRecognition(handler);
           }
-        }
+        };
   
-        recognitionRef.current.start()
+        recognitionRef.current.start();
       } else {
-        console.log("SpeechRecognition not supported. Using fallback.")
-        startFallbackVoiceRecognition(handler)
+        console.log("SpeechRecognition not supported. Using fallback.");
+        startFallbackVoiceRecognition(handler);
       }
     },
     [examStage, startFallbackVoiceRecognition]
-  )
+  );
 
   const stopVoiceRecognition = useCallback(() => {
     if (recognitionRef.current) {
