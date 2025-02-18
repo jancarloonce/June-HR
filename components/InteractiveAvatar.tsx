@@ -198,20 +198,29 @@ export default function InteractiveAvatar({
   const startFallbackVoiceRecognition = useCallback((handler: (response: string) => void) => {
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then((stream) => {
-        let mimeType = "";
+        let options: MediaRecorderOptions = {};
+        // Try a couple of MIME types that OpenAI supports.
         if (MediaRecorder.isTypeSupported("audio/ogg; codecs=opus")) {
-          mimeType = "audio/ogg; codecs=opus";
+          options.mimeType = "audio/ogg; codecs=opus";
         } else if (MediaRecorder.isTypeSupported("audio/webm; codecs=opus")) {
-          mimeType = "audio/webm; codecs=opus";
+          options.mimeType = "audio/webm; codecs=opus";
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+          options.mimeType = "audio/webm";
         } else {
-          // Fallback to default. This may not work with OpenAI.
-          mimeType = "audio/webm";
+          console.log("No preferred MIME type supported; using default.");
         }
         
-        const options = { mimeType };
-        console.log("Using MIME type:", mimeType);
-        
-        const mediaRecorder = new MediaRecorder(stream, options);
+        console.log("Attempting to use MIME type:", options.mimeType || "default");
+  
+        let mediaRecorder: MediaRecorder;
+        try {
+          mediaRecorder = new MediaRecorder(stream, options);
+        } catch (error) {
+          console.error("MediaRecorder constructor error:", error);
+          // Fallback: create without options if the preferred type isn't supported.
+          mediaRecorder = new MediaRecorder(stream);
+        }
+  
         const audioChunks: Blob[] = [];
   
         mediaRecorder.ondataavailable = (event) => {
@@ -221,11 +230,12 @@ export default function InteractiveAvatar({
         };
   
         mediaRecorder.onstop = async () => {
-          // Use the same mime type for the blob.
+          // Use the chosen MIME type if available, else default.
+          const mimeType = options.mimeType || "audio/webm";
           const audioBlob = new Blob(audioChunks, { type: mimeType });
           console.log("Fallback audio blob ready. Size:", audioBlob.size);
-          
-          // Use the appropriate file extension based on the mime type.
+  
+          // Determine the appropriate file extension.
           const fileExtension = mimeType.startsWith("audio/ogg") ? "ogg" : "webm";
           const formData = new FormData();
           formData.append("audio", audioBlob, `recording.${fileExtension}`);
@@ -251,7 +261,7 @@ export default function InteractiveAvatar({
           }
         };
   
-        // Record for 10 seconds for testing.
+        // Increase duration if needed; here we record for 10 seconds.
         mediaRecorder.start();
         console.log("Fallback recording started");
         setTimeout(() => {
@@ -263,6 +273,7 @@ export default function InteractiveAvatar({
         console.error("Error accessing microphone for fallback:", error);
       });
   }, []);
+  
   
 
   // Use native SpeechRecognition if available; otherwise, fall back.
