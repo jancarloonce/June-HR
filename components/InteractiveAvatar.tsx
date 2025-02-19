@@ -69,6 +69,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   const [currentTime, setCurrentTime] = useState<string>("")
   const [isInitializing, setIsInitializing] = useState(false)
   const [sheetError, setSheetError] = useState<string | null>(null)
+  const [hasTranscribedWav, setHasTranscribedWav] = useState(false); // Added state for wav transcription
   // Use a ref to track if the greeting has already been spoken.
   const hasGreetedRef = useRef(false)
   const isGreetingRef = useRef(isGreeting)
@@ -202,6 +203,10 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           console.log("Sheet is open, skipping test.wav simulated voice input.")
           return
         }
+        if (hasTranscribedWav) {
+          console.log("WAV file has already been transcribed, skipping.");
+          return;
+        }
         fetch("/test.wav")
           .then((res) => res.blob())
           .then((blob) => {
@@ -219,6 +224,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
             } else {
               const transcript = data.transcript
               console.log("Transcribed file text:", transcript)
+              setHasTranscribedWav(true);
               handler(transcript)
             }
           })
@@ -275,7 +281,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         console.log("Speech Recognition API is not supported in this browser")
       }
     },
-    [examStage],
+    [examStage, hasTranscribedWav]
   )
 
   const stopVoiceRecognition = useCallback(() => {
@@ -697,6 +703,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   useEffect(() => {
     // Auto-start the session on component mount.
     startSession()
+    setHasTranscribedWav(false); // Reset hasTranscribedWav on mount
   }, [startSession])
 
   useEffect(() => {
