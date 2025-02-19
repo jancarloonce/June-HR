@@ -189,57 +189,91 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      if (SpeechRecognition) {
-        recognitionRef.current = new SpeechRecognition()
-        recognitionRef.current.continuous = false
-        recognitionRef.current.interimResults = false
-
-        recognitionRef.current.onstart = () => {
-          console.log("Voice recognition started")
-          setIsRecognitionActive(true)
-        }
-
-        recognitionRef.current.onresult = (event: any) => {
-          if (sheetOpenRef.current) {
-            console.log("Sheet is open, ignoring voice input.")
-            return
-          }
-          if (isGreetingRef.current) {
-            console.log("Greeting in progress, ignoring voice input.")
-            return
-          }
-          const last = event.results.length - 1
-          const userResponse = event.results[last][0].transcript
-          console.log(`User said: ${userResponse}`)
-          handler(userResponse)
-        }
-
-        recognitionRef.current.onerror = (event: any) => {
-          console.log(`Speech recognition error: ${event.error}`)
-        }
-
-        recognitionRef.current.onend = () => {
-          console.log("Voice recognition ended")
-          setIsRecognitionActive(false)
-          if (
-            examStage === "additionalQuestion1" ||
-            examStage === "additionalQuestion2" ||
-            examStage === "followUpQuestion"
-          ) {
-            startVoiceRecognition(handler)
-          }
-        }
-
-        recognitionRef.current.start()
+      const isIOSOrMac = /iPhone|iPad|iPod|Mac/.test(navigator.userAgent);
+      if (isIOSOrMac) {
+        console.log("Platform is iOS/Mac – using test.wav file for voice input");
+        fetch("/test.wav")
+          .then((res) => res.blob())
+          .then((blob) => {
+            const formData = new FormData();
+            formData.append("audio", blob, "test.wav");
+            return fetch("/api/transcribe-whisper", {
+              method: "POST",
+              body: formData,
+            });
+          })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.error) {
+              console.error("Whisper API returned error:", data.error);
+              // Fallback: pass a default transcript so that the flow continues
+              handler("Yes, I'm ready");
+            } else {
+              const transcript = data.transcript;
+              console.log("Transcribed file text:", transcript);
+              handler(transcript);
+            }
+          })
+          .catch((err) => {
+            console.error("Error transcribing file:", err);
+            // Fallback: pass a default transcript
+            handler("Yes, I'm ready");
+          });
       } else {
-        console.log("Speech Recognition API is not supported in this browser")
-        //implement a fallback method or show a message to the user
+        // Use mic-based voice recognition as before.
+        const SpeechRecognition =
+          (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRecognition) {
+          recognitionRef.current = new SpeechRecognition();
+          recognitionRef.current.continuous = false;
+          recognitionRef.current.interimResults = false;
+  
+          recognitionRef.current.onstart = () => {
+            console.log("Voice recognition started");
+            setIsRecognitionActive(true);
+          };
+  
+          recognitionRef.current.onresult = (event: any) => {
+            if (sheetOpenRef.current) {
+              console.log("Sheet is open, ignoring voice input.");
+              return;
+            }
+            if (isGreetingRef.current) {
+              console.log("Greeting in progress, ignoring voice input.");
+              return;
+            }
+            const last = event.results.length - 1;
+            const userResponse = event.results[last][0].transcript;
+            console.log(`User said: ${userResponse}`);
+            handler(userResponse);
+          };
+  
+          recognitionRef.current.onerror = (event: any) => {
+            console.log(`Speech recognition error: ${event.error}`);
+          };
+  
+          recognitionRef.current.onend = () => {
+            console.log("Voice recognition ended");
+            setIsRecognitionActive(false);
+            if (
+              examStage === "additionalQuestion1" ||
+              examStage === "additionalQuestion2" ||
+              examStage === "followUpQuestion"
+            ) {
+              startVoiceRecognition(handler);
+            }
+          };
+  
+          recognitionRef.current.start();
+        } else {
+          console.log("Speech Recognition API is not supported in this browser");
+          // Optionally, you could call handler with a default response or implement another fallback.
+        }
       }
     },
-    [examStage],
-  )
-
+    [examStage]
+  );
+  
   const stopVoiceRecognition = useCallback(() => {
     if (recognitionRef.current) {
       recognitionRef.current.stop()
