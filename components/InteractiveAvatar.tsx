@@ -45,6 +45,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     | "followUpQuestion"
     | "finished"
     | "summary"
+    | "processing"
   >("notStarted")
   const [sheetUrl, setSheetUrl] = useState<string | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
@@ -533,12 +534,16 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
   const handleInitialResponse = useCallback(
     async (userResponse: string) => {
-      console.log(`Handling initial response: ${userResponse}`)
+      console.log(`Handling initial response: ${userResponse}`);
+      // If we're not in the initial stage, skip processing
       if (examStage !== "notStarted") {
-        console.log("Skipping sentiment analysis for non-initial responses")
-        return
+        console.log("Skipping sentiment analysis for non-initial responses");
+        return;
       }
-
+  
+      // Immediately mark the exam stage as processing to prevent re-triggering.
+      setExamStage("processing");
+  
       try {
         const response = await fetch("/api/sentiment-identifier", {
           method: "POST",
@@ -549,48 +554,45 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
             question: "Are you ready to start the exam?",
             userResponse: userResponse,
           }),
-        })
-
+        });
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-
-        const result = await response.json()
-        const sentiment = result.proceed ? "positive" : "negative"
-        console.log(`Sentiment analysis result: ${sentiment}`)
-
+        const result = await response.json();
+        const sentiment = result.proceed ? "positive" : "negative";
+        console.log(`Sentiment analysis result: ${sentiment}`);
+  
         if (sentiment === "positive") {
           if (avatarRef.current) {
             await avatarRef.current.speak({
               text: "Great! Let's begin the exam. I'm opening the exam sheet now. Good luck!",
               taskType: TaskType.REPEAT,
               taskMode: TaskMode.SYNC,
-            })
-          } else {
-            console.log("Avatar reference is null, cannot speak")
+            });
           }
-          pauseVoiceRecognition()
-          startExam()
+          pauseVoiceRecognition();
+          startExam();
         } else {
           if (avatarRef.current) {
             await avatarRef.current.speak({
               text: "I understand. Thank you for your time. You can start the interview again when you're ready.",
               taskType: TaskType.REPEAT,
               taskMode: TaskMode.SYNC,
-            })
-          } else {
-            console.log("Avatar reference is null, cannot speak")
+            });
           }
           avatarRef.current?.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-            onReturnToLanding()
-          })
+            onReturnToLanding();
+          });
         }
       } catch (error) {
-        console.log(`Error in handleInitialResponse: ${error instanceof Error ? error.message : String(error)}`)
+        console.log(
+          `Error in handleInitialResponse: ${error instanceof Error ? error.message : String(error)}`
+        );
       }
     },
-    [startExam, onReturnToLanding, pauseVoiceRecognition, examStage],
-  )
+    [examStage, onReturnToLanding, pauseVoiceRecognition, startExam]
+  );
+  
 
   const hasInitializedRef = useRef(false)
 
