@@ -69,7 +69,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   const [currentTime, setCurrentTime] = useState<string>("")
   const [isInitializing, setIsInitializing] = useState(false)
   const [sheetError, setSheetError] = useState<string | null>(null)
-  const [hasTranscribedWav, setHasTranscribedWav] = useState(false); // Added state for wav transcription
+
   // Use a ref to track if the greeting has already been spoken.
   const hasGreetedRef = useRef(false)
   const isGreetingRef = useRef(isGreeting)
@@ -168,6 +168,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     try {
       avatarRef.current.closeVoiceChat()
       // Call speak and wait for its promise to resolve
+      setIsGreeting(true)
       await avatarRef.current.speak({
         text: "Hello! I'm June from Activate Talent, your AI HR interviewer. Are you ready to start the exam?",
         taskType: TaskType.REPEAT,
@@ -185,27 +186,35 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       hasGreetedRef.current = true
     } catch (error) {
       console.log(`Error in speakGreeting: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setIsGreeting(false)
     }
   }, [])
+
+  // ---------------------------
+  // START VOICE RECOGNITION
+  // ---------------------------
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
-      // For both branches, you might want to check if the exam sheet is open.
+      // 1. If greeting is still in progress, skip
+      if (isGreetingRef.current) {
+        console.log("Greeting in progress, skipping voice recognition.")
+        return
+      }
+
+      // 2. If sheet is open, skip
       if (sheetOpenRef.current) {
         console.log("Exam sheet is open, skipping voice input.")
         return
       }
 
+      // iOS/mac
       const isIOSOrMac = /iPhone|iPad|iPod|Mac/.test(navigator.userAgent)
       if (isIOSOrMac) {
         console.log("Platform is iOS/Mac – using test.wav file for voice input")
-        // If the sheet becomes open after the check above, you can add another safeguard here:
         if (sheetOpenRef.current) {
           console.log("Sheet is open, skipping test.wav simulated voice input.")
           return
-        }
-        if (hasTranscribedWav) {
-          console.log("WAV file has already been transcribed, skipping.");
-          return;
         }
         fetch("/test.wav")
           .then((res) => res.blob())
@@ -224,7 +233,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
             } else {
               const transcript = data.transcript
               console.log("Transcribed file text:", transcript)
-              setHasTranscribedWav(true);
               handler(transcript)
             }
           })
@@ -233,8 +241,10 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           })
         return
       }
-      // Normal voice recognition for non-Apple devices.
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+
+      // Normal voice recognition for non-Apple devices
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
       if (SpeechRecognition) {
         recognitionRef.current = new SpeechRecognition()
         recognitionRef.current.continuous = false
@@ -281,7 +291,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         console.log("Speech Recognition API is not supported in this browser")
       }
     },
-    [examStage, hasTranscribedWav]
+    [examStage],
   )
 
   const stopVoiceRecognition = useCallback(() => {
@@ -638,18 +648,13 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         })
       })
 
-      // In the stop-talking event, only restart voice recognition if we're not greeting.
+      // Remove the code that calls startVoiceRecognition if examStage is "notStarted"
+      // We'll rely on the video onloadedmetadata below for greeting -> recognition
+
       avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
         console.log("Avatar stopped talking")
-        if (avatarRef.current) {
-          if (!isGreeting && examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-            avatarRef.current.closeVoiceChat()
-            console.log("Avatar stopped talking and voice chat closed")
-            startVoiceRecognition(handleInitialResponse)
-          } else {
-            pauseVoiceRecognition()
-          }
-        }
+        // We simply pause recognition if the avatar finishes talking
+        pauseVoiceRecognition()
       })
 
       console.log("Creating start avatar...")
@@ -672,17 +677,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
       console.log("Waiting a short delay to stabilize stream...")
       await new Promise((resolve) => setTimeout(resolve, 1200))
-
-      // console.log("Stream is fully ready, now speaking greeting...");
-      // setIsGreeting(true);
-      // avatarRef.current.closeVoiceChat();
-      // await speakGreeting();
-      // setIsGreeting(false);
-
-      // Only start voice recognition after the greeting is complete.
-      if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-        startVoiceRecognition(handleInitialResponse)
-      }
     } catch (error) {
       console.log(`Error during avatar initialization: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
@@ -691,19 +685,12 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     }
   }, [
     fetchAccessToken,
-    startVoiceRecognition,
-    handleInitialResponse,
-    examStage,
-    isExamStarted,
-    isExamInProgress,
     pauseVoiceRecognition,
-    isGreeting, // include isGreeting in dependencies
   ])
 
   useEffect(() => {
     // Auto-start the session on component mount.
     startSession()
-    setHasTranscribedWav(false); // Reset hasTranscribedWav on mount
   }, [startSession])
 
   useEffect(() => {
@@ -820,14 +807,11 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                           el.srcObject = stream
                           el.onloadedmetadata = () => {
                             console.log("Video metadata loaded. Avatar should be visible now.")
-                            // Once the video is loaded, start the greeting if it hasn't already been spoken.
+                            // Once the video is loaded, greet & then start recognition
                             if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-                              // Ensure voice recognition is off during greeting.
-                              stopVoiceRecognition()
-                              setIsGreeting(true)
+                              stopVoiceRecognition() // Just in case
                               speakGreeting().then(() => {
-                                setIsGreeting(false)
-                                // Now that greeting is done, start voice recognition.
+                                // Now that greeting is done, start voice recognition
                                 startVoiceRecognition(handleInitialResponse)
                               })
                             }
@@ -883,7 +867,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                       <AlertTitle>Error</AlertTitle>
                       <AlertDescription>{sheetError}</AlertDescription>
                       <Button onClick={startExam} className="mt-4">
-                        <RefreshCw className="mr-2 h-4 w-4" /> Retry className="mt-4"
                         <RefreshCw className="mr-2 h-4 w-4" /> Retry
                       </Button>
                     </Alert>
@@ -956,4 +939,3 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     </div>
   )
 }
-
