@@ -668,37 +668,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     }
   }, [isSheetOpen, stopVoiceRecognition])
 
-
-  const initiateVoiceInput = useCallback(
-    (responseHandler: (transcript: string) => void) => {
-      const isIOSOrMac = /iPhone|iPad|iPod|Mac/.test(navigator.userAgent);
-      if (isIOSOrMac) {
-        // Use the pre-recorded file instead of live mic input.
-        fetch("/test.wav")
-          .then((res) => res.blob())
-          .then((blob) => {
-            const formData = new FormData();
-            formData.append("audio", blob, "test.wav");
-            return fetch("/api/transcribe-whisper", {
-              method: "POST",
-              body: formData,
-            });
-          })
-          .then((res) => res.json())
-          .then((data) => {
-            const transcript = data.transcript;
-            console.log("Transcribed file text:", transcript);
-            responseHandler(transcript);
-          })
-          .catch((err) => console.error("Error transcribing file:", err));
-      } else {
-        // Fallback: use the mic-based voice recognition.
-        startVoiceRecognition(responseHandler);
-      }
-    },
-    [startVoiceRecognition],
-  );
-
   const downloadSummary = useCallback(async () => {
     try {
       const response = await fetch("/api/generate-summary", {
@@ -804,16 +773,18 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                       ref={(el) => {
                         if (el && !el.srcObject) {
                           el.srcObject = stream
-                          onloadedmetadata = () => {
-                            console.log("Video metadata loaded. Avatar should be visible now.");
+                          el.onloadedmetadata = () => {
+                            console.log("Video metadata loaded. Avatar should be visible now.")
+                            // Once the video is loaded, start the greeting if it hasn't already been spoken.
                             if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-                              stopVoiceRecognition();
-                              setIsGreeting(true);
+                              // Ensure voice recognition is off during greeting.
+                              stopVoiceRecognition()
+                              setIsGreeting(true)
                               speakGreeting().then(() => {
-                                setIsGreeting(false);
-                                // Use the helper function to decide whether to use test.wav or mic input
-                                initiateVoiceInput(handleInitialResponse);
-                              });
+                                setIsGreeting(false)
+                                // Now that greeting is done, start voice recognition.
+                                startVoiceRecognition(handleInitialResponse)
+                              })
                             }
                           }
                         }
@@ -830,10 +801,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                     </div>
                   )}
                 </div>
-                {/* Added mic button for user gesture */}
-                <Button onClick={openVoiceInput} disabled={isVoiceInputActive} className="mt-2">
-                  {isVoiceInputActive ? "Mic Active" : "Open Mic"}
-                </Button>
                 {isLoading && (
                   <div className="w-full text-center py-4 text-blue-600">Starting interview session...</div>
                 )}
