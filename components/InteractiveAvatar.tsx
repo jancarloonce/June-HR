@@ -206,8 +206,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           .then((data) => {
             if (data.error) {
               console.error("Whisper API returned error:", data.error);
-              // Fallback: pass a default transcript so that the flow continues
-              handler("Yes, I'm ready");
+              // Do not call handler—this branch simply ends here.
             } else {
               const transcript = data.transcript;
               console.log("Transcribed file text:", transcript);
@@ -216,11 +215,9 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           })
           .catch((err) => {
             console.error("Error transcribing file:", err);
-            // Fallback: pass a default transcript
-            handler("Yes, I'm ready");
+            // Do not call handler if an error occurs.
           });
       } else {
-        // Use mic-based voice recognition as before.
         const SpeechRecognition =
           (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (SpeechRecognition) {
@@ -255,6 +252,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           recognitionRef.current.onend = () => {
             console.log("Voice recognition ended");
             setIsRecognitionActive(false);
+            // Only restart voice recognition for additional question stages.
             if (
               examStage === "additionalQuestion1" ||
               examStage === "additionalQuestion2" ||
@@ -267,12 +265,12 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           recognitionRef.current.start();
         } else {
           console.log("Speech Recognition API is not supported in this browser");
-          // Optionally, you could call handler with a default response or implement another fallback.
         }
       }
     },
     [examStage]
   );
+  
   
   const stopVoiceRecognition = useCallback(() => {
     if (recognitionRef.current) {
@@ -810,15 +808,14 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                           el.onloadedmetadata = () => {
                             console.log("Video metadata loaded. Avatar should be visible now.")
                             // Once the video is loaded, start the greeting if it hasn't already been spoken.
-                            if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-                              // Ensure voice recognition is off during greeting.
-                              stopVoiceRecognition()
-                              setIsGreeting(true)
+                            if (examStage === "notStarted" && !isExamStarted && !isExamInProgress && !hasGreetedRef.current) {
+                              hasGreetedRef.current = true; // Prevent further greetings.
+                              stopVoiceRecognition();
+                              setIsGreeting(true);
                               speakGreeting().then(() => {
-                                setIsGreeting(false)
-                                // Now that greeting is done, start voice recognition.
-                                startVoiceRecognition(handleInitialResponse)
-                              })
+                                setIsGreeting(false);
+                                startVoiceRecognition(handleInitialResponse);
+                              });
                             }
                           }
                         }
