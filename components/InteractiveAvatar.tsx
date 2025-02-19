@@ -69,7 +69,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   const [currentTime, setCurrentTime] = useState<string>("")
   const [isInitializing, setIsInitializing] = useState(false)
   const [sheetError, setSheetError] = useState<string | null>(null)
-  const [hasTranscribedWav, setHasTranscribedWav] = useState(false); // Added state for wav transcription
+
   // Use a ref to track if the greeting has already been spoken.
   const hasGreetedRef = useRef(false)
   const isGreetingRef = useRef(isGreeting)
@@ -81,8 +81,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   useEffect(() => {
     sheetOpenRef.current = isSheetOpen
   }, [isSheetOpen])
-
-  const isProcessingResponseRef = useRef(false);
 
   const fetchAccessToken = useCallback(async () => {
     try {
@@ -170,6 +168,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     try {
       avatarRef.current.closeVoiceChat()
       // Call speak and wait for its promise to resolve
+      setIsGreeting(true)
       await avatarRef.current.speak({
         text: "Hello! I'm June from Activate Talent, your AI HR interviewer. Are you ready to start the exam?",
         taskType: TaskType.REPEAT,
@@ -187,38 +186,47 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       hasGreetedRef.current = true
     } catch (error) {
       console.log(`Error in speakGreeting: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setIsGreeting(false)
     }
   }, [])
+
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
-      // For both branches, you might want to check if the exam sheet is open.
+      // Debug logs to see which branch we enter
+      console.log("startVoiceRecognition called. isGreetingRef.current:", isGreetingRef.current)
+      console.log("sheetOpenRef.current:", sheetOpenRef.current)
+      console.log("examStage:", examStage)
+
+      // Removed the greeting guard for iOS/mac so test.wav can proceed:
+      // if (isGreetingRef.current) {
+      //   console.log("Greeting in progress, skipping voice recognition.")
+      //   return
+      // }
+
       if (sheetOpenRef.current) {
         console.log("Exam sheet is open, skipping voice input.")
         return
       }
 
       const isIOSOrMac = /iPhone|iPad|iPod|Mac/.test(navigator.userAgent)
+      console.log("isIOSOrMac:", isIOSOrMac)
+
       if (isIOSOrMac) {
         console.log("Platform is iOS/Mac – using test.wav file for voice input")
-        // If the sheet becomes open after the check above, you can add another safeguard here:
         if (sheetOpenRef.current) {
           console.log("Sheet is open, skipping test.wav simulated voice input.")
           return
         }
-        if (hasTranscribedWav) {
-          console.log("WAV file has already been transcribed, skipping.");
-          return;
-        }
-        if (isProcessingResponseRef.current) {
-          console.log("Currently processing a response, skipping transcription.");
-          return;
-        }
-        isProcessingResponseRef.current = true;
         fetch("/test.wav")
-          .then((res) => res.blob())
+          .then((res) => {
+            console.log("Fetched /test.wav, status:", res.status)
+            return res.blob()
+          })
           .then((blob) => {
             const formData = new FormData()
             formData.append("audio", blob, "test.wav")
+            console.log("Sending test.wav to /api/transcribe-whisper")
             return fetch("/api/transcribe-whisper", {
               method: "POST",
               body: formData,
@@ -231,20 +239,18 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
             } else {
               const transcript = data.transcript
               console.log("Transcribed file text:", transcript)
-              setHasTranscribedWav(true);
               handler(transcript)
             }
           })
           .catch((err) => {
             console.error("Error transcribing file:", err)
           })
-          .finally(() => {
-            isProcessingResponseRef.current = false;
-          });
         return
       }
-      // Normal voice recognition for non-Apple devices.
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+
+      // Normal voice recognition for non-Apple devices
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
       if (SpeechRecognition) {
         recognitionRef.current = new SpeechRecognition()
         recognitionRef.current.continuous = false
@@ -291,7 +297,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         console.log("Speech Recognition API is not supported in this browser")
       }
     },
-    [examStage, hasTranscribedWav]
+    [examStage],
   )
 
   const stopVoiceRecognition = useCallback(() => {
@@ -555,12 +561,11 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
   const handleInitialResponse = useCallback(
     async (userResponse: string) => {
-      console.log(`Handling initial response: ${userResponse}`);
-      if (examStage !== "notStarted" || isProcessingResponseRef.current) {
-        console.log("Skipping response handling - wrong stage or already processing");
-        return;
+      console.log(`Handling initial response: ${userResponse}`)
+      if (examStage !== "notStarted") {
+        console.log("Skipping sentiment analysis for non-initial responses")
+        return
       }
-      isProcessingResponseRef.current = true;
 
       try {
         const response = await fetch("/api/sentiment-identifier", {
@@ -609,9 +614,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           })
         }
       } catch (error) {
-        console.log(`Error in handleInitialResponse: ${error instanceof Error ? error.message : String(error)}`);
-      } finally {
-        isProcessingResponseRef.current = false;
+        console.log(`Error in handleInitialResponse: ${error instanceof Error ? error.message : String(error)}`)
       }
     },
     [startExam, onReturnToLanding, pauseVoiceRecognition, examStage],
@@ -651,18 +654,10 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         })
       })
 
-      // In the stop-talking event, only restart voice recognition if we're not greeting.
+      // We do NOT auto-start recognition for "notStarted" here
       avatarRef.current.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
         console.log("Avatar stopped talking")
-        if (avatarRef.current) {
-          if (!isGreeting && examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-            avatarRef.current.closeVoiceChat()
-            console.log("Avatar stopped talking and voice chat closed")
-            startVoiceRecognition(handleInitialResponse)
-          } else {
-            pauseVoiceRecognition()
-          }
-        }
+        pauseVoiceRecognition()
       })
 
       console.log("Creating start avatar...")
@@ -685,38 +680,17 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
       console.log("Waiting a short delay to stabilize stream...")
       await new Promise((resolve) => setTimeout(resolve, 1200))
-
-      // console.log("Stream is fully ready, now speaking greeting...");
-      // setIsGreeting(true);
-      // avatarRef.current.closeVoiceChat();
-      // await speakGreeting();
-      // setIsGreeting(false);
-
-      // Only start voice recognition after the greeting is complete.
-      if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-        startVoiceRecognition(handleInitialResponse)
-      }
     } catch (error) {
       console.log(`Error during avatar initialization: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setIsLoading(false)
       setIsInitializing(false)
     }
-  }, [
-    fetchAccessToken,
-    startVoiceRecognition,
-    handleInitialResponse,
-    examStage,
-    isExamStarted,
-    isExamInProgress,
-    pauseVoiceRecognition,
-    isGreeting, // include isGreeting in dependencies
-  ])
+  }, [fetchAccessToken, pauseVoiceRecognition])
 
   useEffect(() => {
     // Auto-start the session on component mount.
     startSession()
-    setHasTranscribedWav(false); // Reset hasTranscribedWav on mount
   }, [startSession])
 
   useEffect(() => {
@@ -833,11 +807,13 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                           el.srcObject = stream
                           el.onloadedmetadata = () => {
                             console.log("Video metadata loaded. Avatar should be visible now.")
-                            // Once the video is loaded, greet & then start recognition
+                            // Once the video is loaded, start the greeting if it hasn't already been spoken.
                             if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
-                              stopVoiceRecognition() // Just in case
+                              stopVoiceRecognition()
+                              setIsGreeting(true)
                               speakGreeting().then(() => {
-                                // Now that greeting is done, start voice recognition
+                                setIsGreeting(false)
+                                // Now that greeting is done, start voice recognition.
                                 startVoiceRecognition(handleInitialResponse)
                               })
                             }
