@@ -186,35 +186,37 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       console.log(`Error in speakGreeting: ${error instanceof Error ? error.message : String(error)}`)
     }
   }, [])
-
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
-      // Check for iOS/macOS devices using navigator.userAgent.
-      const isAppleDevice = /Mac|iPhone|iPad/i.test(navigator.userAgent);
-      if (isAppleDevice) {
-        console.log("Detected iOS/macOS device. Simulating voice input using test.wav.");
-        fetch('/test.wav')
-        .then((res) => res.blob())
-        .then((blob) => {
-          const formData = new FormData();
-          formData.append("audio", blob, "test.wav");
-          return fetch("/api/transcribe-whisper", {
-            method: "POST",
-            body: formData,
-          });
+      const isIOSOrMac = /iPhone|iPad|iPod|Mac/.test(navigator.userAgent);
+      if (isIOSOrMac) {
+        console.log("Platform is iOS/Mac – using test.wav file for voice input");
+        fetch("/test.wav")
+          .then((res) => res.blob())
+          .then((blob) => {
+            const formData = new FormData();
+            formData.append("audio", blob, "test.wav");
+            return fetch("/api/transcribe-whisper", {
+              method: "POST",
+              body: formData,
+            });
           })
-          .then((response) => response.json())
+          .then((res) => res.json())
           .then((data) => {
-            const transcript = data.transcript;
-            console.log(`Transcript from test.wav: ${transcript}`);
-            handler(transcript);
+            if (data.error) {
+              console.error("Whisper API returned error:", data.error);
+              // Do not call handler—this branch simply ends here.
+            } else {
+              const transcript = data.transcript;
+              console.log("Transcribed file text:", transcript);
+              handler(transcript);
+            }
           })
-          .catch((error) => {
-            console.error("Error processing test.wav:", error);
+          .catch((err) => {
+            console.error("Error transcribing file:", err);
+            // Do not call handler if an error occurs.
           });
-        return;
       }
-  
       // Normal voice recognition for non-Apple devices.
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
