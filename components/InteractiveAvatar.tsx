@@ -194,14 +194,14 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       if (isAppleDevice) {
         console.log("Detected iOS/macOS device. Simulating voice input using test.wav.");
         fetch('/test.wav')
-          .then((response) => response.blob())
-          .then((blob) => {
-            const formData = new FormData();
-            formData.append('file', blob, 'test.wav');
-            return fetch('/api/transcribe-whisper', {
-              method: 'POST',
-              body: formData,
-            });
+        .then((res) => res.blob())
+        .then((blob) => {
+          const formData = new FormData();
+          formData.append("audio", blob, "test.wav");
+          return fetch("/api/transcribe-whisper", {
+            method: "POST",
+            body: formData,
+          });
           })
           .then((response) => response.json())
           .then((data) => {
