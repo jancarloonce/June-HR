@@ -45,7 +45,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
     | "followUpQuestion"
     | "finished"
     | "summary"
-    | "processing"
   >("notStarted")
   const [sheetUrl, setSheetUrl] = useState<string | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
@@ -190,88 +189,83 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
-      const isIOSOrMac = /iPhone|iPad|iPod|Mac/.test(navigator.userAgent);
-      if (isIOSOrMac) {
-        console.log("Platform is iOS/Mac – using test.wav file for voice input");
-        fetch("/test.wav")
-          .then((res) => res.blob())
+      // Check for iOS/macOS devices using navigator.userAgent.
+      const isAppleDevice = /Mac|iPhone|iPad/i.test(navigator.userAgent);
+      if (isAppleDevice) {
+        console.log("Detected iOS/macOS device. Simulating voice input using test.wav.");
+        fetch('/test.wav')
+          .then((response) => response.blob())
           .then((blob) => {
             const formData = new FormData();
-            formData.append("audio", blob, "test.wav");
-            return fetch("/api/transcribe-whisper", {
-              method: "POST",
+            formData.append('file', blob, 'test.wav');
+            return fetch('/api/transcribe-whisper', {
+              method: 'POST',
               body: formData,
             });
           })
-          .then((res) => res.json())
+          .then((response) => response.json())
           .then((data) => {
-            if (data.error) {
-              console.error("Whisper API returned error:", data.error);
-              // Do not call handler—this branch simply ends here.
-            } else {
-              const transcript = data.transcript;
-              console.log("Transcribed file text:", transcript);
-              handler(transcript);
-            }
+            const transcript = data.transcript;
+            console.log(`Transcript from test.wav: ${transcript}`);
+            handler(transcript);
           })
-          .catch((err) => {
-            console.error("Error transcribing file:", err);
-            // Do not call handler if an error occurs.
+          .catch((error) => {
+            console.error("Error processing test.wav:", error);
           });
+        return;
+      }
+  
+      // Normal voice recognition for non-Apple devices.
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        recognitionRef.current = new SpeechRecognition();
+        recognitionRef.current.continuous = false;
+        recognitionRef.current.interimResults = false;
+  
+        recognitionRef.current.onstart = () => {
+          console.log("Voice recognition started");
+          setIsRecognitionActive(true);
+        };
+  
+        recognitionRef.current.onresult = (event: any) => {
+          if (sheetOpenRef.current) {
+            console.log("Sheet is open, ignoring voice input.");
+            return;
+          }
+          if (isGreetingRef.current) {
+            console.log("Greeting in progress, ignoring voice input.");
+            return;
+          }
+          const last = event.results.length - 1;
+          const userResponse = event.results[last][0].transcript;
+          console.log(`User said: ${userResponse}`);
+          handler(userResponse);
+        };
+  
+        recognitionRef.current.onerror = (event: any) => {
+          console.log(`Speech recognition error: ${event.error}`);
+        };
+  
+        recognitionRef.current.onend = () => {
+          console.log("Voice recognition ended");
+          setIsRecognitionActive(false);
+          if (
+            examStage === "additionalQuestion1" ||
+            examStage === "additionalQuestion2" ||
+            examStage === "followUpQuestion"
+          ) {
+            startVoiceRecognition(handler);
+          }
+        };
+  
+        recognitionRef.current.start();
       } else {
-        const SpeechRecognition =
-          (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (SpeechRecognition) {
-          recognitionRef.current = new SpeechRecognition();
-          recognitionRef.current.continuous = false;
-          recognitionRef.current.interimResults = false;
-  
-          recognitionRef.current.onstart = () => {
-            console.log("Voice recognition started");
-            setIsRecognitionActive(true);
-          };
-  
-          recognitionRef.current.onresult = (event: any) => {
-            if (sheetOpenRef.current) {
-              console.log("Sheet is open, ignoring voice input.");
-              return;
-            }
-            if (isGreetingRef.current) {
-              console.log("Greeting in progress, ignoring voice input.");
-              return;
-            }
-            const last = event.results.length - 1;
-            const userResponse = event.results[last][0].transcript;
-            console.log(`User said: ${userResponse}`);
-            handler(userResponse);
-          };
-  
-          recognitionRef.current.onerror = (event: any) => {
-            console.log(`Speech recognition error: ${event.error}`);
-          };
-  
-          recognitionRef.current.onend = () => {
-            console.log("Voice recognition ended");
-            setIsRecognitionActive(false);
-            // Only restart voice recognition for additional question stages.
-            if (
-              examStage === "additionalQuestion1" ||
-              examStage === "additionalQuestion2" ||
-              examStage === "followUpQuestion"
-            ) {
-              startVoiceRecognition(handler);
-            }
-          };
-  
-          recognitionRef.current.start();
-        } else {
-          console.log("Speech Recognition API is not supported in this browser");
-        }
+        console.log("Speech Recognition API is not supported in this browser");
+        // Optionally, implement a fallback here.
       }
     },
     [examStage]
   );
-  
   
   const stopVoiceRecognition = useCallback(() => {
     if (recognitionRef.current) {
@@ -534,16 +528,12 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
   const handleInitialResponse = useCallback(
     async (userResponse: string) => {
-      console.log(`Handling initial response: ${userResponse}`);
-      // If we're not in the initial stage, skip processing
+      console.log(`Handling initial response: ${userResponse}`)
       if (examStage !== "notStarted") {
-        console.log("Skipping sentiment analysis for non-initial responses");
-        return;
+        console.log("Skipping sentiment analysis for non-initial responses")
+        return
       }
-  
-      // Immediately mark the exam stage as processing to prevent re-triggering.
-      setExamStage("processing");
-  
+
       try {
         const response = await fetch("/api/sentiment-identifier", {
           method: "POST",
@@ -554,45 +544,48 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
             question: "Are you ready to start the exam?",
             userResponse: userResponse,
           }),
-        });
+        })
+
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          throw new Error(`HTTP error! status: ${response.status}`)
         }
-        const result = await response.json();
-        const sentiment = result.proceed ? "positive" : "negative";
-        console.log(`Sentiment analysis result: ${sentiment}`);
-  
+
+        const result = await response.json()
+        const sentiment = result.proceed ? "positive" : "negative"
+        console.log(`Sentiment analysis result: ${sentiment}`)
+
         if (sentiment === "positive") {
           if (avatarRef.current) {
             await avatarRef.current.speak({
               text: "Great! Let's begin the exam. I'm opening the exam sheet now. Good luck!",
               taskType: TaskType.REPEAT,
               taskMode: TaskMode.SYNC,
-            });
+            })
+          } else {
+            console.log("Avatar reference is null, cannot speak")
           }
-          pauseVoiceRecognition();
-          startExam();
+          pauseVoiceRecognition()
+          startExam()
         } else {
           if (avatarRef.current) {
             await avatarRef.current.speak({
               text: "I understand. Thank you for your time. You can start the interview again when you're ready.",
               taskType: TaskType.REPEAT,
               taskMode: TaskMode.SYNC,
-            });
+            })
+          } else {
+            console.log("Avatar reference is null, cannot speak")
           }
           avatarRef.current?.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-            onReturnToLanding();
-          });
+            onReturnToLanding()
+          })
         }
       } catch (error) {
-        console.log(
-          `Error in handleInitialResponse: ${error instanceof Error ? error.message : String(error)}`
-        );
+        console.log(`Error in handleInitialResponse: ${error instanceof Error ? error.message : String(error)}`)
       }
     },
-    [examStage, onReturnToLanding, pauseVoiceRecognition, startExam]
-  );
-  
+    [startExam, onReturnToLanding, pauseVoiceRecognition, examStage],
+  )
 
   const hasInitializedRef = useRef(false)
 
@@ -810,14 +803,15 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
                           el.onloadedmetadata = () => {
                             console.log("Video metadata loaded. Avatar should be visible now.")
                             // Once the video is loaded, start the greeting if it hasn't already been spoken.
-                            if (examStage === "notStarted" && !isExamStarted && !isExamInProgress && !hasGreetedRef.current) {
-                              hasGreetedRef.current = true; // Prevent further greetings.
-                              stopVoiceRecognition();
-                              setIsGreeting(true);
+                            if (examStage === "notStarted" && !isExamStarted && !isExamInProgress) {
+                              // Ensure voice recognition is off during greeting.
+                              stopVoiceRecognition()
+                              setIsGreeting(true)
                               speakGreeting().then(() => {
-                                setIsGreeting(false);
-                                startVoiceRecognition(handleInitialResponse);
-                              });
+                                setIsGreeting(false)
+                                // Now that greeting is done, start voice recognition.
+                                startVoiceRecognition(handleInitialResponse)
+                              })
                             }
                           }
                         }
