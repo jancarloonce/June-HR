@@ -103,45 +103,39 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
 
   const fetchSheetUrl = useCallback(async () => {
     try {
-      console.log("Fetching Google Sheet URL...");
+      console.log("Fetching Google Sheet URL...")
       const response = await fetch("/api/get-sheet-url", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ name: candidateInfo?.name }),
-      });
+      })
       if (!response.ok) {
-        throw new Error(`Failed to fetch sheet URL: ${response.statusText}`);
+        throw new Error(`Failed to fetch sheet URL: ${response.statusText}`)
       }
-      const data = await response.json();
+      const data = await response.json()
       if (!data.url) {
-        throw new Error("No sheet URL received in response");
+        throw new Error("No sheet URL received in response")
       }
-      console.log("Successfully retrieved Google Sheet URL:", data.url);
-  
-      // Remove or comment out these lines to avoid opening a new tab:
-      // const sheetWindow = window.open(data.url, "_blank");
-      // if (!sheetWindow) {
-      //   console.warn("Unable to open sheet automatically. It may be blocked by a popup blocker.");
-      // }
-  
-      return data.url;
+      console.log("Successfully retrieved Google Sheet URL:", data.url)
+
+      // Only attempt to open the sheet in a new tab for non-Safari browsers
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+      if (!isSafari) {
+        const sheetWindow = window.open(data.url, "_blank")
+        if (!sheetWindow) {
+          console.warn("Unable to open sheet automatically. It may be blocked by a popup blocker.")
+        }
+      }
+
+      return data.url
     } catch (error) {
-      console.error(
-        `Error fetching sheet URL: ${
-          error instanceof Error ? error.message : "Unknown error occurred"
-        }`
-      );
-      setSheetError(
-        `Failed to create exam sheet: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-      return null;
+      console.error(`Error fetching sheet URL: ${error instanceof Error ? error.message : "Unknown error occurred"}`)
+      setSheetError(`Failed to create exam sheet: ${error instanceof Error ? error.message : "Unknown error"}`)
+      return null
     }
-  }, [candidateInfo]);
-  
+  }, [candidateInfo])
 
   const fetchSheetData = useCallback(async () => {
     if (!sheetUrl) {
@@ -258,8 +252,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       }
 
       // Normal voice recognition for non-Apple devices
-      const SpeechRecognition =
-        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
       if (SpeechRecognition) {
         recognitionRef.current = new SpeechRecognition()
         recognitionRef.current.continuous = false
@@ -552,13 +545,13 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       setIsVoiceInputActive(false)
       console.log("Exam started successfully")
 
-      // Attempt to open the sheet
-      if (!document.hidden) {
-        const sheetWindow = window.open(url, "_blank")
-        if (!sheetWindow) {
-          console.warn("Unable to open sheet automatically. It may be blocked by a popup blocker.")
-        }
-      }
+      // Removed or commented out this block
+      // if (!document.hidden) {
+      //   const sheetWindow = window.open(url, "_blank")
+      //   if (!sheetWindow) {
+      //     console.warn("Unable to open sheet automatically. It may be blocked by a popup blocker.")
+      //   }
+      // }
     } catch (error) {
       setExamStage("notStarted")
       setSheetError("Failed to load the exam sheet. Please try again.")
