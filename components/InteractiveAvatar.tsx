@@ -188,9 +188,20 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
   }, [])
   const startVoiceRecognition = useCallback(
     (handler: (response: string) => void) => {
+      // For both branches, you might want to check if the exam sheet is open.
+      if (sheetOpenRef.current) {
+        console.log("Exam sheet is open, skipping voice input.");
+        return;
+      }
+  
       const isIOSOrMac = /iPhone|iPad|iPod|Mac/.test(navigator.userAgent);
       if (isIOSOrMac) {
         console.log("Platform is iOS/Mac – using test.wav file for voice input");
+        // If the sheet becomes open after the check above, you can add another safeguard here:
+        if (sheetOpenRef.current) {
+          console.log("Sheet is open, skipping test.wav simulated voice input.");
+          return;
+        }
         fetch("/test.wav")
           .then((res) => res.blob())
           .then((blob) => {
@@ -205,7 +216,6 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           .then((data) => {
             if (data.error) {
               console.error("Whisper API returned error:", data.error);
-              // Do not call handler—this branch simply ends here.
             } else {
               const transcript = data.transcript;
               console.log("Transcribed file text:", transcript);
@@ -214,11 +224,12 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           })
           .catch((err) => {
             console.error("Error transcribing file:", err);
-            // Do not call handler if an error occurs.
           });
+        return;
       }
       // Normal voice recognition for non-Apple devices.
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
         recognitionRef.current = new SpeechRecognition();
         recognitionRef.current.continuous = false;
@@ -263,11 +274,11 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
         recognitionRef.current.start();
       } else {
         console.log("Speech Recognition API is not supported in this browser");
-        // Optionally, implement a fallback here.
       }
     },
     [examStage]
   );
+  
   
   const stopVoiceRecognition = useCallback(() => {
     if (recognitionRef.current) {
