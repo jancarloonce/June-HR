@@ -203,14 +203,15 @@ export async function POST(req: Request) {
   ]
 
   // Set row heights
-  worksheet.getRow(1).height = 40
+  worksheet.getRow(1).height = 50
   worksheet.getRow(2).height = 40
   ;[3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 17].forEach((rowNum) => {
     worksheet.getRow(rowNum).height = 30
   })
-  ;[13, 15, 16].forEach((rowNum) => {
+  ;[13, 16].forEach((rowNum) => {
     worksheet.getRow(rowNum).height = 70
   })
+  worksheet.getRow(15).height = 100
 
   worksheet.spliceRows(18, 1)
   ;["A4", "A5", "A6", "A8", "A9", "A10", "A12", "A13", "A15", "A16"].forEach((cellRef) => {

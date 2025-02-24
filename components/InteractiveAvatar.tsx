@@ -200,21 +200,17 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
       console.log("startVoiceRecognition called. isGreetingRef.current:", isGreetingRef.current)
       console.log("sheetOpenRef.current:", sheetOpenRef.current)
       console.log("examStage:", examStage)
-
-      // Removed the greeting guard for iOS/mac so test.wav can proceed:
-      // if (isGreetingRef.current) {
-      //   console.log("Greeting in progress, skipping voice recognition.")
-      //   return
-      // }
-
+  
       if (sheetOpenRef.current) {
         console.log("Exam sheet is open, skipping voice input.")
         return
       }
-
+  
       const isIOSOrMac = /iPhone|iPad|iPod|Mac/.test(navigator.userAgent)
       console.log("isIOSOrMac:", isIOSOrMac)
-
+  
+      // Commented out the test.wav logic for iOS/Mac
+      /*
       if (isIOSOrMac) {
         console.log("Platform is iOS/Mac – using test.wav file for voice input")
         if (sheetOpenRef.current) {
@@ -250,19 +246,20 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           })
         return
       }
-
-      // Normal voice recognition for non-Apple devices
+      */
+  
+      // Normal voice recognition for all platforms now
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
       if (SpeechRecognition) {
         recognitionRef.current = new SpeechRecognition()
         recognitionRef.current.continuous = false
         recognitionRef.current.interimResults = false
-
+  
         recognitionRef.current.onstart = () => {
           console.log("Voice recognition started")
           setIsRecognitionActive(true)
         }
-
+  
         recognitionRef.current.onresult = (event: any) => {
           if (sheetOpenRef.current) {
             console.log("Sheet is open, ignoring voice input.")
@@ -277,11 +274,11 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
           console.log(`User said: ${userResponse}`)
           handler(userResponse)
         }
-
+  
         recognitionRef.current.onerror = (event: any) => {
           console.log(`Speech recognition error: ${event.error}`)
         }
-
+  
         recognitionRef.current.onend = () => {
           console.log("Voice recognition ended")
           setIsRecognitionActive(false)
@@ -293,7 +290,7 @@ export default function InteractiveAvatar({ onReturnToLanding, candidateInfo }: 
             startVoiceRecognition(handler)
           }
         }
-
+  
         recognitionRef.current.start()
       } else {
         console.log("Speech Recognition API is not supported in this browser")
